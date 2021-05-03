@@ -10,22 +10,27 @@ async function main(): Promise<void> {
 
   const _startBlock = currentBlockNumber + 5;
   const _endBlock = currentBlockNumber + 10000;
-  const _stakeLimit = ethers.utils.parseEther("10000");
-  const _contractStakeLimit = ethers.utils.parseEther("100000000000");
-  const _rewardPerBlock = [ethers.utils.parseEther("0.005"), ethers.utils.parseEther("0.000025")];
+  const _stakeLimit = ethers.utils.parseEther("10000").toString();
+  const _contractStakeLimit = ethers.utils.parseEther("100000000000").toString();
+  const _rewardPerBlock = [ethers.utils.parseEther("0.005").toString(), ethers.utils.parseEther("0.000025").toString()];
   const _rewardsTokens = ["0xc8b23857d66ae204d195968714840a75d28dc217", "0x1371597fc11aedbd2446f5390fa1dbf22491752a"];
   const _stakingToken = "0x8f8a7cff6bfcb4b88b83aa9b61e0ac5d57546f98";
 
   const Portal: ContractFactory = await ethers.getContractFactory("Portal");
-  const portal: Contract = await Portal.deploy(
-    _startBlock,
-    _endBlock,
-    _stakeLimit,
-    _contractStakeLimit,
-    _rewardPerBlock,
-    _rewardsTokens,
-    _stakingToken,
+
+  const constructorArgs = [_startBlock, _endBlock, _stakeLimit, _contractStakeLimit, _rewardPerBlock, _rewardsTokens, _stakingToken];
+
+  const encodedArgs = ethers.utils.defaultAbiCoder.encode(
+    ["uint256", "uint256", "uint256", "uint256", "uint256[]", "uint256[]", "address"],
+    constructorArgs,
   );
+
+  console.log("Encoded Constructor arguments: ", encodedArgs);
+
+  console.log("Constructor arguments: ", constructorArgs);
+
+  const portal: Contract = await Portal.deploy(...constructorArgs);
+  console.log("Portal address: ", portal.address);
   await portal.deployed();
 }
 
@@ -37,3 +42,5 @@ main()
     console.error(error);
     process.exit(1);
   });
+
+// npx hardhat verify --network ropsten --constructor-args ./scripts/constructorArgs.ts 0xa2940A33554DD59dF51C3DD6B0A6bd21B4fd76D5
