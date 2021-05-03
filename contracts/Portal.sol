@@ -85,7 +85,7 @@ contract Portal is ReentrancyGuard {
     }
 
     function _stake(uint256 _tokenAmount, address staker) internal onlyInsideBlockBounds onlyUnderStakeLimit(staker, _tokenAmount) {
-        require(_tokenAmount > 0, "Stake::Cannot stake 0");
+        require(_tokenAmount > 0, "Portal:: Cannot stake 0");
 
         UserInfo storage user = userInfo[staker];
 
