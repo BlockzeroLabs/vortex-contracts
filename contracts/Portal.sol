@@ -344,9 +344,12 @@ contract Portal is ReentrancyGuard, ERC20 {
         uint256 portion = (currentBlock - provider.startBlock) / duration;
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
+            uint256 currentReward = IERC20Metadata(tokensReward[i]).balanceOf(address(this));
+            require(currentReward > 0, "Portal:: no rewards.");
+
             IERC20Metadata(tokensReward[i]).safeTransferFrom(
-                _provider,
                 address(this),
+                _provider,
                 provider.initalRewards[i] * portion
             );
 
