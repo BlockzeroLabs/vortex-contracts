@@ -340,7 +340,8 @@ contract Portal is ReentrancyGuard, ERC20 {
 
         updatePortalData();
 
-        uint256 portion = (currentBlock - provider.startBlock) / (provider.endBlock - provider.startBlock);
+        uint256 duration = provider.endBlock - provider.startBlock;
+        uint256 portion = (currentBlock - provider.startBlock) / duration;
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
             IERC20Metadata(tokensReward[i]).safeTransferFrom(
@@ -349,11 +350,11 @@ contract Portal is ReentrancyGuard, ERC20 {
                 provider.initalRewards[i] * portion
             );
 
+            rewardPerBlock[i] = rewardPerBlock[i] - (provider.initalRewards[i] / duration);
             provider.initalRewards[i] = 0;
         }
 
         // TODO: provider endBlock and startBlock?
-
-        _burn(address(_provider), balanceOf(_provider));
+        // _burn(address(_provider), balanceOf(_provider));
     }
 }
