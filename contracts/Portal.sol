@@ -7,18 +7,8 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-contract Portal is ReentrancyGuard, ERC20 {
+contract Portal is ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
-
-    uint8 public immutable tokenDecimals;
-
-    struct ProviderInfo {
-        uint256[] initalRewards;
-        uint256 startBlock;
-        uint256 endBlock;
-    }
-
-    mapping(address => ProviderInfo) public providerInfo;
 
     uint256 public immutable startBlock;
     uint256 public immutable userStakeLimit;
@@ -40,8 +30,10 @@ contract Portal is ReentrancyGuard, ERC20 {
         uint256[] debt;
         uint256[] reward;
     }
-
     mapping(address => UserInfo) public userInfo;
+
+    mapping(address => uint256[]) public providerRewardRatios;
+    uint256[] public totalRewardRatios;
 
     constructor(
         uint256 _startBlock,
@@ -50,19 +42,13 @@ contract Portal is ReentrancyGuard, ERC20 {
         uint256 _totalStakeLimit,
         uint256[] memory _rewardPerBlock,
         address[] memory _tokensReward,
-        IERC20Metadata _portalToken,
-        string memory _name,
-        string memory _symbol,
-        uint8 _decimals
-    ) ERC20(_name, _symbol) {
+        IERC20Metadata _portalToken
+    ) {
         require(_startBlock > block.number, "Portal:: invalid start block.");
         require(_endBlock > _startBlock, "Portal:: invalid end block.");
         require(_rewardPerBlock.length == _tokensReward.length, "Portal:: invalid rewards arrays.");
         require(_userStakeLimit != 0, "Portal:: invalid user stake limit.");
         require(_totalStakeLimit != 0, "Portal:: invalid total stake limit.");
-        require(_decimals > 0, "Portal:: reward token decimals.");
-
-        tokenDecimals = _decimals;
 
         portalToken = _portalToken;
         rewardPerBlock = _rewardPerBlock;
@@ -75,6 +61,7 @@ contract Portal is ReentrancyGuard, ERC20 {
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
             rewardPerTokenStaked.push(0);
+            totalRewardRatios.push(0);
         }
     }
 
@@ -295,20 +282,17 @@ contract Portal is ReentrancyGuard, ERC20 {
     }
 
     function _addReward(uint256[] memory _tokenAmounts, uint256 _duration, address _provider) internal {
-        // TODO: handle case in which provider adds more reward on top of previous
-        uint256 tokenAmountsLength = _tokenAmounts.length;
         require(_tokenAmounts.length == tokensReward.length, "Portal:: invalid tokens length.");
         require(_duration != 0 , "Portal:: duration cannot be 0.");
 
         updatePortalData();
 
-        uint256 currentBlock = block.number;
-        endBlock = currentBlock + _duration > endBlock ? currentBlock + _duration : endBlock;
+        uint256[] storage provider = providerRewardRatios[_provider];
 
-        for (uint256 i = 0; i < tokenAmountsLength; i++) {
-            if (_tokenAmounts[i] == 0) {
-                continue;
-            }
+        uint256 newEndBlock = block.number + _duration > endBlock ? block.number + _duration : endBlock;
+
+        for (uint256 i = 0; i < _tokenAmounts.length; i++) {
+            require(_tokenAmounts[i] > 0 , "Portal:: reward cannot be 0.");
 
             IERC20Metadata(tokensReward[i]).safeTransferFrom(
                 _provider,
@@ -316,16 +300,15 @@ contract Portal is ReentrancyGuard, ERC20 {
                 _tokenAmounts[i]
             );
 
-            rewardPerBlock[i] = rewardPerBlock[i] + (_tokenAmounts[i] / (endBlock - currentBlock));
+            uint256 nonDistributedReward = rewardPerBlock[i] * (endBlock - block.number);
+
+            provider[i] = nonDistributedReward == 0 ? 1 : _tokenAmounts[i] / nonDistributedReward;
+            totalRewardRatios[i] = totalRewardRatios[i] + provider[i];
+
+            rewardPerBlock[i] = (nonDistributedReward + _tokenAmounts[i]) / (newEndBlock - block.number);
         }
 
-        ProviderInfo storage provider = providerInfo[_provider];
-        provider.endBlock = endBlock;
-        provider.startBlock = currentBlock;
-        provider.initalRewards = _tokenAmounts;
-
-        // TODO: calculate LP tokens and mint them to user
-        // _mint(address(_provider), _amount);
+        endBlock = newEndBlock;
     }
 
     function removeReward() public nonReentrant {
@@ -333,31 +316,29 @@ contract Portal is ReentrancyGuard, ERC20 {
     }
 
     function _removeReward(address _provider) internal {
-        ProviderInfo memory provider = providerInfo[_provider];
-        uint256 currentBlock = block.number;
+        uint256[] memory provider = providerRewardRatios[_provider];
 
-        require(provider.endBlock < currentBlock, "Portal:: reward distribution ended.");
+        require(endBlock < block.number, "Portal:: rewards distribution ended.");
 
         updatePortalData();
-
-        uint256 duration = provider.endBlock - provider.startBlock;
-        uint256 portion = (currentBlock - provider.startBlock) / duration;
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
             uint256 currentReward = IERC20Metadata(tokensReward[i]).balanceOf(address(this));
             require(currentReward > 0, "Portal:: no rewards.");
 
+            uint256 nonDistributedReward = rewardPerBlock[i] * (endBlock - block.number);
+            // provider portion of non distributed reward
+            uint256 providerPortion = nonDistributedReward * provider[i] / totalRewardRatios[i];
+
             IERC20Metadata(tokensReward[i]).safeTransferFrom(
                 address(this),
                 _provider,
-                provider.initalRewards[i] * portion
+                providerPortion
             );
 
-            rewardPerBlock[i] = rewardPerBlock[i] - (provider.initalRewards[i] / duration);
-            provider.initalRewards[i] = 0;
+            rewardPerBlock[i] = rewardPerBlock[i] - ((nonDistributedReward - providerPortion) / (endBlock - block.number));
+            totalRewardRatios[i] = totalRewardRatios[i] - provider[i];
+            provider[i] = 0;
         }
-
-        // TODO: provider endBlock and startBlock?
-        // _burn(address(_provider), balanceOf(_provider));
     }
 }
