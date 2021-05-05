@@ -10,6 +10,8 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 contract Portal is ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
 
+    uint256 constant private precision = 10**18;
+
     uint256 public immutable startBlock;
     uint256 public immutable userStakeLimit;
     uint256 public immutable totalStakeLimit;
@@ -302,7 +304,8 @@ contract Portal is ReentrancyGuard {
 
             uint256 nonDistributedReward = rewardPerBlock[i] * (endBlock - block.number);
 
-            provider[i] = nonDistributedReward == 0 ? 1 : _tokenAmounts[i] / nonDistributedReward;
+            uint256 newRewardRation = nonDistributedReward == 0 ? precision : ((_tokenAmounts[i] * precision) / nonDistributedReward);
+            provider[i] = provider[i] + newRewardRation;
             totalRewardRatios[i] = totalRewardRatios[i] + provider[i];
 
             rewardPerBlock[i] = (nonDistributedReward + _tokenAmounts[i]) / (newEndBlock - block.number);
@@ -316,27 +319,24 @@ contract Portal is ReentrancyGuard {
     }
 
     function _removeReward(address _provider) internal {
-        uint256[] memory provider = providerRewardRatios[_provider];
+        uint256[] storage provider = providerRewardRatios[_provider];
 
         require(endBlock < block.number, "Portal:: rewards distribution ended.");
 
         updatePortalData();
 
-        for (uint256 i = 0; i < tokensReward.length; i++) {
-            uint256 currentReward = IERC20Metadata(tokensReward[i]).balanceOf(address(this));
-            require(currentReward > 0, "Portal:: no rewards.");
+        uint256 duration = endBlock - block.number;
 
-            uint256 nonDistributedReward = rewardPerBlock[i] * (endBlock - block.number);
-            // provider portion of non distributed reward
+        for (uint256 i = 0; i < tokensReward.length; i++) {
+            uint256 nonDistributedReward = rewardPerBlock[i] * duration;
             uint256 providerPortion = nonDistributedReward * provider[i] / totalRewardRatios[i];
 
-            IERC20Metadata(tokensReward[i]).safeTransferFrom(
-                address(this),
+            IERC20Metadata(tokensReward[i]).safeTransfer(
                 _provider,
                 providerPortion
             );
 
-            rewardPerBlock[i] = rewardPerBlock[i] - ((nonDistributedReward - providerPortion) / (endBlock - block.number));
+            rewardPerBlock[i] = rewardPerBlock[i] - ((nonDistributedReward - providerPortion) / duration);
             totalRewardRatios[i] = totalRewardRatios[i] - provider[i];
             provider[i] = 0;
         }
