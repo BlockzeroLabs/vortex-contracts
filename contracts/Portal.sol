@@ -296,6 +296,10 @@ contract Portal is ReentrancyGuard {
         for (uint256 i = 0; i < _tokenAmounts.length; i++) {
             require(_tokenAmounts[i] > 0 , "Portal:: reward cannot be 0.");
 
+            if (provider.length < _tokenAmounts.length) {
+                provider.push(0);
+            }
+
             IERC20Metadata(tokensReward[i]).safeTransferFrom(
                 _provider,
                 address(this),
@@ -321,14 +325,16 @@ contract Portal is ReentrancyGuard {
     function _removeReward(address _provider) internal {
         uint256[] storage provider = providerRewardRatios[_provider];
 
-        require(endBlock < block.number, "Portal:: rewards distribution ended.");
+        require(endBlock > block.number, "Portal:: rewards distribution ended.");
 
         updatePortalData();
 
-        uint256 duration = endBlock - block.number;
+        uint256 totalDuration = endBlock - startBlock;
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
-            uint256 nonDistributedReward = rewardPerBlock[i] * duration;
+            uint256 distributedReward = rewardPerTokenStaked[i] * totalDuration;
+            uint256 totalReward = rewardPerBlock[i] * totalDuration;
+            uint256 nonDistributedReward = totalReward - distributedReward;
             uint256 providerPortion = nonDistributedReward * provider[i] / totalRewardRatios[i];
 
             IERC20Metadata(tokensReward[i]).safeTransfer(
@@ -336,7 +342,7 @@ contract Portal is ReentrancyGuard {
                 providerPortion
             );
 
-            rewardPerBlock[i] = rewardPerBlock[i] - ((nonDistributedReward - providerPortion) / duration);
+            rewardPerBlock[i] = rewardPerBlock[i] - ((nonDistributedReward - providerPortion) / (endBlock - block.number));
             totalRewardRatios[i] = totalRewardRatios[i] - provider[i];
             provider[i] = 0;
         }
