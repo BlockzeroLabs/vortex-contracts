@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MIT
-
 pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "hardhat/console.sol";
 
 contract Portal is ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
 
-    uint256 constant private precision = 10**18;
+    uint256 private constant precision = 10**18;
 
     uint256 public immutable startBlock;
     uint256 public immutable userStakeLimit;
@@ -283,9 +282,13 @@ contract Portal is ReentrancyGuard {
         _addReward(_tokenAmounts, _duration, msg.sender);
     }
 
-    function _addReward(uint256[] memory _tokenAmounts, uint256 _duration, address _provider) internal {
+    function _addReward(
+        uint256[] memory _tokenAmounts,
+        uint256 _duration,
+        address _provider
+    ) internal {
         require(_tokenAmounts.length == tokensReward.length, "Portal:: invalid tokens length.");
-        require(_duration != 0 , "Portal:: duration cannot be 0.");
+        require(_duration != 0, "Portal:: duration cannot be 0.");
 
         updatePortalData();
 
@@ -293,26 +296,33 @@ contract Portal is ReentrancyGuard {
 
         uint256 newEndBlock = block.number + _duration > endBlock ? block.number + _duration : endBlock;
 
+        console.log("currentBlock", block.number);
+        console.log("endBlock", endBlock);
+        console.log("duration", _duration);
+        console.log("newEndBlock", newEndBlock);
+
         for (uint256 i = 0; i < _tokenAmounts.length; i++) {
-            require(_tokenAmounts[i] > 0 , "Portal:: reward cannot be 0.");
+            require(_tokenAmounts[i] > 0, "Portal:: reward cannot be 0.");
 
             if (provider.length < _tokenAmounts.length) {
                 provider.push(0);
             }
 
-            IERC20Metadata(tokensReward[i]).safeTransferFrom(
-                _provider,
-                address(this),
-                _tokenAmounts[i]
-            );
+            console.log("\n");
+            console.log("rewardPerBlock[i]", rewardPerBlock[i]);
+            IERC20Metadata(tokensReward[i]).safeTransferFrom(_provider, address(this), _tokenAmounts[i]);
 
             uint256 nonDistributedReward = rewardPerBlock[i] * (endBlock - block.number);
+            console.log("nonDistributedReward", nonDistributedReward);
 
-            uint256 newRewardRation = nonDistributedReward == 0 ? precision : ((_tokenAmounts[i] * precision) / nonDistributedReward);
-            provider[i] = provider[i] + newRewardRation;
+            uint256 newRewardRatio = nonDistributedReward == 0 ? precision : ((_tokenAmounts[i] * precision) / nonDistributedReward);
+            console.log("newRewardRatio", newRewardRatio);
+
+            provider[i] = provider[i] + newRewardRatio;
             totalRewardRatios[i] = totalRewardRatios[i] + provider[i];
 
             rewardPerBlock[i] = (nonDistributedReward + _tokenAmounts[i]) / (newEndBlock - block.number);
+            console.log("rewardPerBlock", rewardPerBlock[i]);
         }
 
         endBlock = newEndBlock;
@@ -329,18 +339,27 @@ contract Portal is ReentrancyGuard {
 
         updatePortalData();
 
+        console.log("\n============Remove Reward============");
+
         uint256 totalDuration = endBlock - startBlock;
+        console.log("endBlock", endBlock);
+        console.log("startBlock", startBlock);
+        console.log("total duration", totalDuration);
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
             uint256 distributedReward = rewardPerTokenStaked[i] * totalDuration;
-            uint256 totalReward = rewardPerBlock[i] * totalDuration;
-            uint256 nonDistributedReward = totalReward - distributedReward;
-            uint256 providerPortion = nonDistributedReward * provider[i] / totalRewardRatios[i];
+            console.log("distributedReward", distributedReward);
 
-            IERC20Metadata(tokensReward[i]).safeTransfer(
-                _provider,
-                providerPortion
-            );
+            uint256 totalReward = rewardPerBlock[i] * totalDuration;
+            console.log("totalReward", totalReward);
+
+            uint256 nonDistributedReward = totalReward - distributedReward;
+            console.log("nonDistributedReward", nonDistributedReward);
+
+            uint256 providerPortion = (nonDistributedReward * provider[i]) / totalRewardRatios[i];
+            console.log("providerPortion", providerPortion);
+
+            IERC20Metadata(tokensReward[i]).safeTransfer(_provider, providerPortion);
 
             rewardPerBlock[i] = rewardPerBlock[i] - ((nonDistributedReward - providerPortion) / (endBlock - block.number));
             totalRewardRatios[i] = totalRewardRatios[i] - provider[i];
