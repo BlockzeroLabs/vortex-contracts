@@ -9,6 +9,12 @@ import "hardhat/console.sol";
 contract Portal is ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
 
+    struct UserInfo {
+        uint256 amount;
+        uint256[] debt;
+        uint256[] reward;
+    }
+
     uint256 private constant precision = 10**18;
 
     uint256 public immutable startBlock;
@@ -21,20 +27,14 @@ contract Portal is ReentrancyGuard {
 
     uint256[] public rewardPerBlock;
     uint256[] public rewardPerTokenStaked;
+    uint256[] public totalRewards;
+    uint256[] public totalRewardRatios;
 
     address[] public tokensReward;
-
     IERC20Metadata public immutable portalToken;
 
-    struct UserInfo {
-        uint256 amount;
-        uint256[] debt;
-        uint256[] reward;
-    }
-    mapping(address => UserInfo) public userInfo;
-
     mapping(address => uint256[]) public providerRewardRatios;
-    uint256[] public totalRewardRatios;
+    mapping(address => UserInfo) public userInfo;
 
     constructor(
         uint256 _startBlock,
@@ -63,6 +63,7 @@ contract Portal is ReentrancyGuard {
         for (uint256 i = 0; i < tokensReward.length; i++) {
             rewardPerTokenStaked.push(0);
             totalRewardRatios.push(0);
+            totalRewards.push(0);
         }
     }
 
@@ -296,6 +297,7 @@ contract Portal is ReentrancyGuard {
 
         uint256 newEndBlock = block.number + _duration > endBlock ? block.number + _duration : endBlock;
 
+        console.log("\n============Add Reward============");
         console.log("currentBlock", block.number);
         console.log("endBlock", endBlock);
         console.log("duration", _duration);
@@ -307,6 +309,8 @@ contract Portal is ReentrancyGuard {
             if (provider.length < _tokenAmounts.length) {
                 provider.push(0);
             }
+
+            totalRewards[i] = totalRewards[i] + _tokenAmounts[i];
 
             console.log("\n");
             console.log("rewardPerBlock[i]", rewardPerBlock[i]);
@@ -347,17 +351,19 @@ contract Portal is ReentrancyGuard {
         console.log("total duration", totalDuration);
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
-            uint256 distributedReward = rewardPerTokenStaked[i] * totalDuration;
-            console.log("distributedReward", distributedReward);
+            uint256 balance = IERC20Metadata(tokensReward[i]).balanceOf(address(this));
+            uint256 distributedReward = (balance * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
+            console.log("\ndistributedReward", distributedReward);
 
-            uint256 totalReward = rewardPerBlock[i] * totalDuration;
-            console.log("totalReward", totalReward);
-
-            uint256 nonDistributedReward = totalReward - distributedReward;
+            uint256 nonDistributedReward = totalRewards[i] - distributedReward;
             console.log("nonDistributedReward", nonDistributedReward);
 
             uint256 providerPortion = (nonDistributedReward * provider[i]) / totalRewardRatios[i];
             console.log("providerPortion", providerPortion);
+
+            console.log("totalRewards[i] before", totalRewards[i]);
+            totalRewards[i] = totalRewards[i] - providerPortion;
+            console.log("totalRewards[i] after", totalRewards[i]);
 
             IERC20Metadata(tokensReward[i]).safeTransfer(_provider, providerPortion);
 
