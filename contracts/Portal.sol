@@ -351,7 +351,7 @@ contract Portal is ReentrancyGuard {
         console.log("total duration", totalDuration);
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
-            uint256 balance = IERC20Metadata(tokensReward[i]).balanceOf(address(this));
+            uint256 balance = portalToken.balanceOf(address(this));
             uint256 distributedReward = (balance * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
             console.log("\ndistributedReward", distributedReward);
 
