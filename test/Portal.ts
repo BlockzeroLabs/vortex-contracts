@@ -21,6 +21,10 @@ describe("Unit tests", function () {
 
     const signers: SignerWithAddress[] = await hre.ethers.getSigners();
     this.signers.admin = signers[0];
+    for (var _i = 1; _i < 4; _i++) {
+      this.signers.providers = signers.slice(1, 4);
+      this.signers.users = signers.slice(4, 7);
+    }
 
     // Deploy ERC20 tokens
     const erc20Artifact: Artifact = await hre.artifacts.readArtifact("TestToken");
@@ -50,13 +54,17 @@ describe("Unit tests", function () {
 
     // Mint and Approve reward tokens
     for (const t of this.rewards) {
-      await t.mint(this.signers.admin.address, hre.ethers.utils.parseEther("5000000000"));
-      await t.approve(this.portal.address, hre.ethers.constants.MaxUint256.toString());
+      for (const p of this.signers.providers) {
+        await t.mint(p.address, hre.ethers.utils.parseEther("5000000000"))
+        await t.connect(p).approve(this.portal.address, hre.ethers.constants.MaxUint256.toString());
+      }
     }
 
     // Mint and Approve staking tokens
-    await this.stakingToken.mint(this.signers.admin.address, hre.ethers.utils.parseEther("5000000000"));
-    await this.stakingToken.approve(this.portal.address, hre.ethers.constants.MaxUint256.toString());
+    for (const u of this.signers.users) {
+      await this.stakingToken.mint(u.address, hre.ethers.utils.parseEther("5000000000"));
+      await this.stakingToken.connect(u).approve(this.portal.address, hre.ethers.constants.MaxUint256.toString());
+    }
   });
 
   describe("Portal", function () {
