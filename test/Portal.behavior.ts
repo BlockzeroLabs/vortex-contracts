@@ -23,10 +23,16 @@ export function shouldBehaveLikePortal(): void {
 
     // remove reward
     await this.portal
-      .connect(this.signers.providers[0])
+      .connect(this.signers.providers[1])
       .removeReward();
 
-    const rpb = await this.portal.rewardPerBlock(0)
-    console.log("RPB: ", rpb.toString())
+    // mine 50 blocks
+    for (let i = 0; i < 100; i++) {
+      await ethers.provider.send("evm_mine", []);
+    }
+
+    await this.portal
+      .connect(this.signers.providers[0])
+      .removeReward();
   });
 }

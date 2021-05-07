@@ -296,10 +296,6 @@ contract Portal is ReentrancyGuard {
         uint256 newEndBlock = block.number + _duration > endBlock ? block.number + _duration : endBlock;
 
         console.log("\n============Add Reward============");
-        console.log("currentBlock", block.number);
-        console.log("endBlock", endBlock);
-        console.log("duration", _duration);
-        console.log("newEndBlock", newEndBlock);
 
         for (uint256 i = 0; i < _tokenAmounts.length; i++) {
             require(_tokenAmounts[i] > 0, "Portal:: reward cannot be 0.");
@@ -308,32 +304,20 @@ contract Portal is ReentrancyGuard {
                 provider.push(0);
             }
 
-            totalRewards[i] = totalRewards[i] + _tokenAmounts[i];
-
-            console.log("\n");
-            console.log("rewardPerBlock[i]", rewardPerBlock[i]);
             IERC20Metadata(tokensReward[i]).safeTransferFrom(_provider, address(this), _tokenAmounts[i]);
 
             uint256 balance = portalToken.balanceOf(address(this));
-
             uint256 distributedReward = (balance * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
-            console.log("\ndistributedReward", distributedReward);
-
             uint256 nonDistributedReward = totalRewards[i] - distributedReward;
-            console.log("nonDistributedReward", nonDistributedReward);
 
             uint256 precision = getTokenMultiplier(tokensReward[i]);
             uint256 newRewardRatio = nonDistributedReward == 0 ? precision : (_tokenAmounts[i] * precision) / nonDistributedReward;
-            console.log("newRewardRatio", newRewardRatio);
 
             provider[i] = provider[i] + newRewardRatio;
-            console.log("provider[i] ", provider[i]);
             totalRewardRatios[i] = totalRewardRatios[i] + provider[i];
-            console.log("totalRewardRatios[i] ", totalRewardRatios[i]);
 
-
+            totalRewards[i] = totalRewards[i] + _tokenAmounts[i];
             rewardPerBlock[i] = (nonDistributedReward + _tokenAmounts[i]) / (newEndBlock - block.number);
-            console.log("rewardPerBlock", rewardPerBlock[i]);
         }
 
         endBlock = newEndBlock;
@@ -352,37 +336,19 @@ contract Portal is ReentrancyGuard {
 
         console.log("\n============Remove Reward============");
 
-        // uint256 totalDuration = endBlock - startBlock;
-        // console.log("endBlock", endBlock);
-        // console.log("startBlock", startBlock);
-        // console.log("total duration", totalDuration);
-
         for (uint256 i = 0; i < tokensReward.length; i++) {
             uint256 balance = portalToken.balanceOf(address(this));
-            console.log("\nbalance", balance);
-            console.log("\rewardPerTokenStaked", rewardPerTokenStaked[i]);
-            console.log("\rtokensReward", getTokenMultiplier(tokensReward[i]));
-
             uint256 distributedReward = (balance * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
-            console.log("\ndistributedReward", distributedReward);
-
             uint256 nonDistributedReward = totalRewards[i] - distributedReward;
-            console.log("nonDistributedReward", nonDistributedReward);
 
             uint256 providerPortion = (nonDistributedReward * provider[i]) / totalRewardRatios[i];
-            console.log("providerPortion", providerPortion);
-
-            console.log("totalRewards[i] before", totalRewards[i]);
-            totalRewards[i] = totalRewards[i] - providerPortion;
-            console.log("totalRewards[i] after", totalRewards[i]);
-
             IERC20Metadata(tokensReward[i]).safeTransfer(_provider, providerPortion);
 
-            console.log("rewardPerBlock[i] before", rewardPerBlock[i]);
-            rewardPerBlock[i] = rewardPerBlock[i] - ((nonDistributedReward - providerPortion) / (endBlock - block.number));
-            console.log("rewardPerBlock[i] after", rewardPerBlock[i]);
             totalRewardRatios[i] = totalRewardRatios[i] - provider[i];
             provider[i] = 0;
+
+            totalRewards[i] = totalRewards[i] - providerPortion;
+            rewardPerBlock[i] = (nonDistributedReward - providerPortion) / (endBlock - block.number);
         }
     }
 }
