@@ -318,6 +318,8 @@ contract Portal is ReentrancyGuard {
         }
 
         endBlock = newEndBlock;
+        // TODO: I believe this needs to be called here after the removal, but please check if that's correct
+        // updatePortalData();
     }
 
     function removeReward() public nonReentrant {
@@ -345,5 +347,8 @@ contract Portal is ReentrancyGuard {
             totalRewards[i] = totalRewards[i] - providerPortion;
             rewardPerBlock[i] = (nonDistributedReward - providerPortion) / (endBlock - block.number);
         }
+
+        // TODO: I believe this needs to be called here after the removal, but please check if that's correct
+        // updatePortalData();
     }
 }
