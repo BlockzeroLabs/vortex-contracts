@@ -21,7 +21,7 @@ describe("Unit tests", function () {
 
     const signers: SignerWithAddress[] = await hre.ethers.getSigners();
     this.signers.admin = signers[0];
-    for (var _i = 1; _i < 4; _i++) {
+    for (let i = 1; i < 4; i++) {
       this.signers.providers = signers.slice(1, 4);
       this.signers.users = signers.slice(4, 7);
     }
@@ -55,7 +55,7 @@ describe("Unit tests", function () {
     // Mint and Approve reward tokens
     for (const t of this.rewards) {
       for (const p of this.signers.providers) {
-        await t.mint(p.address, hre.ethers.utils.parseEther("5000000000"))
+        await t.mint(p.address, hre.ethers.utils.parseEther("5000000000"));
         await t.connect(p).approve(this.portal.address, hre.ethers.constants.MaxUint256.toString());
       }
     }

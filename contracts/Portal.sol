@@ -4,7 +4,6 @@ pragma solidity 0.8.4;
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "hardhat/console.sol";
 
 contract Portal is ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
@@ -295,8 +294,6 @@ contract Portal is ReentrancyGuard {
 
         uint256 newEndBlock = block.number + _duration > endBlock ? block.number + _duration : endBlock;
 
-        console.log("\n============Add Reward============");
-
         for (uint256 i = 0; i < _tokenAmounts.length; i++) {
             require(_tokenAmounts[i] > 0, "Portal:: reward cannot be 0.");
 
@@ -333,8 +330,6 @@ contract Portal is ReentrancyGuard {
         require(endBlock > block.number, "Portal:: rewards distribution ended.");
 
         updatePortalData();
-
-        console.log("\n============Remove Reward============");
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
             uint256 balance = portalToken.balanceOf(address(this));
