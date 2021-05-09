@@ -5,6 +5,8 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
+import "hardhat/console.sol";
+
 contract Portal is ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
 
@@ -26,6 +28,7 @@ contract Portal is ReentrancyGuard {
     uint256[] public rewardPerTokenStaked;
     uint256[] public totalRewards;
     uint256[] public totalRewardRatios;
+    uint256[] public neverToBeHarvestedReward;
 
     address[] public tokensReward;
     IERC20Metadata public immutable portalToken;
@@ -61,6 +64,7 @@ contract Portal is ReentrancyGuard {
             rewardPerTokenStaked.push(0);
             totalRewardRatios.push(0);
             totalRewards.push(0);
+            neverToBeHarvestedReward.push(0);
         }
     }
 
@@ -84,6 +88,7 @@ contract Portal is ReentrancyGuard {
         totalStaked = totalStaked + _amount;
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
+            console.log("\nrewardPerTokenStaked on stake:", rewardPerTokenStaked[i]);
             uint256 totalDebt = (user.amount * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
             user.debt[i] = totalDebt;
         }
@@ -104,6 +109,8 @@ contract Portal is ReentrancyGuard {
             uint256 reward = user.reward[i];
             user.reward[i] = 0;
             IERC20Metadata(tokensReward[i]).safeTransfer(_user, reward);
+
+            totalRewards[i] = totalRewards[i] - reward;
         }
     }
 
@@ -153,6 +160,10 @@ contract Portal is ReentrancyGuard {
                         uint256 newReward = numberOfBlocksSinceLastUpdate * rewardPerBlock[i];
                         uint256 rewardPerTokenIncrease = (newReward * getTokenMultiplier(tokensReward[i])) / totalStaked;
                         rewardPerTokenStaked[i] = rewardPerTokenStaked[i] + rewardPerTokenIncrease;
+                    }
+                } else {
+                    for (uint256 i = 0; i < tokensReward.length; i++) {
+                        neverToBeHarvestedReward[i] = neverToBeHarvestedReward[i] + (numberOfBlocksSinceLastUpdate * rewardPerBlock[i]);
                     }
                 }
 
@@ -276,6 +287,67 @@ contract Portal is ReentrancyGuard {
         return 10**decimals;
     }
 
+    function getPortalInfo() public view returns (uint256,
+                                                  uint256,
+                                                  uint256,
+                                                  uint256,
+                                                  address[] memory,
+                                                  address,
+                                                  uint256,
+                                                  uint256[] memory,
+                                                  uint256[] memory,
+                                                  uint256[] memory)
+                                                  {
+        return (endBlock,
+                startBlock,
+                userStakeLimit,
+                totalStakeLimit,
+                tokensReward,
+                address(portalToken),
+                lastBlockUpdate,
+                totalRewards,
+                rewardPerBlock,
+                rewardPerTokenStaked);
+    }
+
+    function getStartAndEnd() public view returns (uint256, uint256) {
+        return (endBlock, startBlock);
+    }
+
+    function getLimits() public view returns (uint256, uint256) {
+        return (userStakeLimit, totalStakeLimit);
+    }
+
+    function getTokens() public view returns (address[] memory, address) {
+        return (tokensReward, address(portalToken));
+    }
+
+    function getLastBlockUpdate() public view returns (uint256) {
+        return lastBlockUpdate;
+    }
+
+    function getTotalRewards(uint256 _tokenIndex) public view returns (uint256) {
+        return totalRewards[_tokenIndex];
+    }
+
+    function getRewardPerBlock(uint256 _tokenIndex) public view returns (uint256) {
+        return rewardPerBlock[_tokenIndex];
+    }
+
+    function getRewardPerTokenStaked(uint256 _tokenIndex) public view returns (uint256) {
+        return rewardPerTokenStaked[_tokenIndex];
+    }
+
+    function getRefundableReward(address _provider, uint256 _tokenIndex) public view returns (uint256) {
+        uint256[] storage provider = providerRewardRatios[_provider];
+
+        uint256 balance = portalToken.balanceOf(address(this));
+        uint256 distributedReward = (balance * rewardPerTokenStaked[_tokenIndex]) / getTokenMultiplier(tokensReward[_tokenIndex]);
+        uint256 nonDistributedReward = totalRewards[_tokenIndex] - distributedReward;
+
+        return (nonDistributedReward * provider[_tokenIndex]) / totalRewardRatios[_tokenIndex];
+    }
+
     function addReward(uint256[] memory _tokenAmounts, uint256 _duration) public nonReentrant {
         _addReward(_tokenAmounts, _duration, msg.sender);
     }
@@ -295,6 +367,7 @@ contract Portal is ReentrancyGuard {
         uint256 newEndBlock = block.number + _duration > endBlock ? block.number + _duration : endBlock;
 
         for (uint256 i = 0; i < _tokenAmounts.length; i++) {
+            console.log("\n");
             require(_tokenAmounts[i] > 0, "Portal:: reward cannot be 0.");
 
             if (provider.length < _tokenAmounts.length) {
@@ -304,6 +377,7 @@ contract Portal is ReentrancyGuard {
             IERC20Metadata(tokensReward[i]).safeTransferFrom(_provider, address(this), _tokenAmounts[i]);
 
             uint256 balance = portalToken.balanceOf(address(this));
+            console.log("rewardPerTokenStaked:", rewardPerTokenStaked[i]);
             uint256 distributedReward = (balance * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
             uint256 nonDistributedReward = totalRewards[i] - distributedReward;
 
@@ -334,11 +408,15 @@ contract Portal is ReentrancyGuard {
         updatePortalData();
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
+            console.log("\n");
             uint256 balance = portalToken.balanceOf(address(this));
+            console.log("rewardPerTokenStaked:", rewardPerTokenStaked[i]);
             uint256 distributedReward = (balance * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
+            console.log("distributedReward:", distributedReward);
             uint256 nonDistributedReward = totalRewards[i] - distributedReward;
 
             uint256 providerPortion = (nonDistributedReward * provider[i]) / totalRewardRatios[i];
+            console.log("providerPortion:", providerPortion);
             IERC20Metadata(tokensReward[i]).safeTransfer(_provider, providerPortion);
 
             totalRewardRatios[i] = totalRewardRatios[i] - provider[i];
