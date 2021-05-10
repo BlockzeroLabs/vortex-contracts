@@ -13,9 +13,7 @@ export function shouldBehaveLikePortal(): void {
     }
 
     // user 0 joins -> block 100
-    await this.portal
-      .connect(this.signers.users[0])
-      .stake(ethers.utils.parseEther("1").toString());
+    await this.portal.connect(this.signers.users[0]).stake(ethers.utils.parseEther("1").toString());
 
     // mine 100 blocks
     for (let i = 0; i < 99; i++) {
@@ -23,9 +21,7 @@ export function shouldBehaveLikePortal(): void {
     }
 
     // // user 1 joins -> block 200
-    await this.portal
-      .connect(this.signers.users[1])
-      .stake(ethers.utils.parseEther("1").toString());
+    await this.portal.connect(this.signers.users[1]).stake(ethers.utils.parseEther("1").toString());
 
     // mine 100 blocks
     for (let i = 0; i < 99; i++) {
@@ -53,18 +49,16 @@ export function shouldBehaveLikePortal(): void {
     }
 
     // provider 0 removes reward -> block 500
-    await this.portal
-      .connect(this.signers.providers[0])
-      .removeReward();
+    await this.portal.connect(this.signers.providers[0]).removeReward();
 
     // mine 100 blocks
     for (let i = 0; i < 99; i++) {
       await ethers.provider.send("evm_mine", []);
     }
 
-    await this.portal  // user 1 harvests -> block 600
+    await this.portal // user 1 harvests -> block 600
       .connect(this.signers.users[1])
-      .harvest()
+      .harvest();
 
     // mine 100 blocks
     for (let i = 0; i < 99; i++) {
@@ -73,12 +67,12 @@ export function shouldBehaveLikePortal(): void {
 
     await this.portal // user 0 harvests -> block 700
       .connect(this.signers.users[0])
-      .harvest()
+      .harvest();
 
-    const result = await this.portal.getPortalInfo()
-    console.log(result[7][0].toString())
+    const result = await this.portal.getPortalInfo();
+    console.log(result[7][0].toString());
 
-    const never = await this.portal.neverToBeHarvestedReward(0)
-    console.log(never.toString())
+    const never = await this.portal.neverToBeHarvestedReward(0);
+    console.log("never:", never.toString());
   });
 }

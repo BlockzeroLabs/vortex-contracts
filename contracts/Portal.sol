@@ -197,25 +197,18 @@ contract Portal is ReentrancyGuard {
     // solhint-disable-next-line
     function updateUserReward(address _user) internal {
         UserInfo storage user = userInfo[_user];
+        uint256 tokensRewardLength = tokensReward.length;
 
-        if (user.debt.length != tokensReward.length) {
-            uint256 rewardsTokensLength = tokensReward.length;
-            for (uint256 i = user.debt.length; i < rewardsTokensLength; i++) {
-                user.debt.push(0);
-            }
+        for (uint256 i = user.debt.length; i < tokensRewardLength; i++) {
+            user.debt.push(0);
         }
 
-        if (user.reward.length != tokensReward.length) {
-            uint256 rewardsTokensLength = tokensReward.length;
-            for (uint256 i = user.reward.length; i < rewardsTokensLength; i++) {
-                user.reward.push(0);
-            }
+        for (uint256 i = user.reward.length; i < tokensRewardLength; i++) {
+            user.reward.push(0);
         }
 
         if (user.amount > 0) {
-            uint256 rewardsTokensLength = tokensReward.length;
-
-            for (uint256 tokenIndex = 0; tokenIndex < rewardsTokensLength; tokenIndex++) {
+            for (uint256 tokenIndex = 0; tokenIndex < tokensRewardLength; tokenIndex++) {
                 uint256 totalDebt = (user.amount * rewardPerTokenStaked[tokenIndex]) / getTokenMultiplier(tokensReward[tokenIndex]);
                 uint256 pendingDebt = totalDebt - user.debt[tokenIndex];
 
@@ -287,27 +280,34 @@ contract Portal is ReentrancyGuard {
         return 10**decimals;
     }
 
-    function getPortalInfo() public view returns (uint256,
-                                                  uint256,
-                                                  uint256,
-                                                  uint256,
-                                                  address[] memory,
-                                                  address,
-                                                  uint256,
-                                                  uint256[] memory,
-                                                  uint256[] memory,
-                                                  uint256[] memory)
-                                                  {
-        return (endBlock,
-                startBlock,
-                userStakeLimit,
-                totalStakeLimit,
-                tokensReward,
-                address(portalToken),
-                lastBlockUpdate,
-                totalRewards,
-                rewardPerBlock,
-                rewardPerTokenStaked);
+    function getPortalInfo()
+        public
+        view
+        returns (
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            address[] memory,
+            address,
+            uint256,
+            uint256[] memory,
+            uint256[] memory,
+            uint256[] memory
+        )
+    {
+        return (
+            endBlock,
+            startBlock,
+            userStakeLimit,
+            totalStakeLimit,
+            tokensReward,
+            address(portalToken),
+            lastBlockUpdate,
+            totalRewards,
+            rewardPerBlock,
+            rewardPerTokenStaked
+        );
     }
 
     function getStartAndEnd() public view returns (uint256, uint256) {
