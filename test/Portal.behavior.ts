@@ -70,6 +70,13 @@ export function shouldBehaveLikePortal(): void {
       .harvest();
 
     const result = await this.portal.getPortalInfo();
-    console.log(result[7][0].toString());
+    console.log("total rewards 0", result[7][0].toString());
+    console.log("total rewards 1", result[7][1].toString());
+
+    const balance0 = await this.rewards[0].balanceOf(this.portal.address);
+    console.log("balance 0: ", balance0.toString());
+
+    const balance1 = await this.rewards[1].balanceOf(this.portal.address);
+    console.log("balance 1: ", balance1.toString());
   });
 }

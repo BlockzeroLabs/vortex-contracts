@@ -24,6 +24,7 @@ contract Portal is ReentrancyGuard {
     uint256 public totalStaked;
     uint256 public lastBlockUpdate;
 
+    uint256[] public portalDebt;
     uint256[] public rewardPerBlock;
     uint256[] public rewardPerTokenStaked;
     uint256[] public totalRewards;
@@ -63,6 +64,7 @@ contract Portal is ReentrancyGuard {
             rewardPerTokenStaked.push(0);
             totalRewardRatios.push(0);
             totalRewards.push(0);
+            portalDebt.push(0);
         }
     }
 
@@ -89,6 +91,7 @@ contract Portal is ReentrancyGuard {
             console.log("\nrewardPerTokenStaked on stake:", rewardPerTokenStaked[i]);
             uint256 totalDebt = (user.amount * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
             user.debt[i] = totalDebt;
+            portalDebt[i] = portalDebt[i] + totalDebt;
         }
 
         portalToken.safeTransferFrom(msg.sender, address(this), _amount);
@@ -106,9 +109,8 @@ contract Portal is ReentrancyGuard {
         for (uint256 i = 0; i < tokensReward.length; i++) {
             uint256 reward = user.reward[i];
             user.reward[i] = 0;
-            IERC20Metadata(tokensReward[i]).safeTransfer(_user, reward);
-
             totalRewards[i] = totalRewards[i] - reward;
+            IERC20Metadata(tokensReward[i]).safeTransfer(_user, reward);
         }
     }
 
@@ -129,6 +131,12 @@ contract Portal is ReentrancyGuard {
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
             uint256 totalDebt = (user.amount * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
+
+            if (portalDebt[i] > 0) {
+                uint256 totalDebtDiff = user.debt[i] - totalDebt;
+                portalDebt[i] = portalDebt[i] - totalDebtDiff;
+            }
+
             user.debt[i] = totalDebt;
         }
 
@@ -370,10 +378,9 @@ contract Portal is ReentrancyGuard {
 
             IERC20Metadata(tokensReward[i]).safeTransferFrom(_provider, address(this), _tokenAmounts[i]);
 
-            uint256 balance = portalToken.balanceOf(address(this));
             console.log("rewardPerTokenStaked:", rewardPerTokenStaked[i]);
-            uint256 distributedReward = (balance * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
-            uint256 nonDistributedReward = totalRewards[i] - distributedReward;
+            uint256 distributedReward = (totalStaked * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
+            uint256 nonDistributedReward = totalRewards[i] - distributedReward + portalDebt[i];
 
             uint256 precision = getTokenMultiplier(tokensReward[i]);
             uint256 newRewardRatio = nonDistributedReward == 0 ? precision : (_tokenAmounts[i] * precision) / nonDistributedReward;
@@ -401,11 +408,10 @@ contract Portal is ReentrancyGuard {
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
             console.log("\n");
-            uint256 balance = portalToken.balanceOf(address(this));
             console.log("rewardPerTokenStaked:", rewardPerTokenStaked[i]);
-            uint256 distributedReward = (balance * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
+            uint256 distributedReward = (totalStaked * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
             console.log("distributedReward:", distributedReward);
-            uint256 nonDistributedReward = totalRewards[i] - distributedReward;
+            uint256 nonDistributedReward = totalRewards[i] - distributedReward + portalDebt[i];
 
             uint256 providerPortion = (nonDistributedReward * provider[i]) / totalRewardRatios[i];
             console.log("providerPortion:", providerPortion);
