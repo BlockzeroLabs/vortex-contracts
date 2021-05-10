@@ -3,8 +3,8 @@ import { Artifact } from "hardhat/types";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/dist/src/signer-with-address";
 
 import { Signers } from "../types";
-import { shouldBehaveLikePortal } from "./Portal.behavior";
-import { ERC20, Portal } from "../typechain";
+import { shouldBehaveLikePortal } from "./Portal2.behavior";
+import { ERC20, Portal2 } from "../typechain";
 
 const { deployContract } = hre.waffle;
 
@@ -39,31 +39,23 @@ describe("Unit tests", function () {
     const _endBlock = currentBlockNumber + config.duration;
 
     // Deploy Portal
-    const portalArtifact: Artifact = await hre.artifacts.readArtifact("Portal");
-    this.portal = <Portal>(
-      await deployContract(this.signers.admin, portalArtifact, [
-        _startBlock,
-        _endBlock,
-        config.stakeLimit,
-        config.contractStakeLimit,
-        config.rewardPerBlock,
-        this.rewards.map(m => m.address),
-        this.stakingToken.address,
-      ])
+    const portalArtifact: Artifact = await hre.artifacts.readArtifact("Portal2");
+    this.portal2 = <Portal2>(
+      await deployContract(this.signers.admin, portalArtifact, [_endBlock, this.rewards[0].address, this.stakingToken.address])
     );
 
     // Mint and Approve reward tokens
     for (const t of this.rewards) {
       for (const p of this.signers.providers) {
         await t.mint(p.address, hre.ethers.utils.parseEther("5000000000"));
-        await t.connect(p).approve(this.portal.address, hre.ethers.constants.MaxUint256.toString());
+        await t.connect(p).approve(this.portal2.address, hre.ethers.constants.MaxUint256.toString());
       }
     }
 
     // Mint and Approve staking tokens
     for (const u of this.signers.users) {
       await this.stakingToken.mint(u.address, hre.ethers.utils.parseEther("5000000000"));
-      await this.stakingToken.connect(u).approve(this.portal.address, hre.ethers.constants.MaxUint256.toString());
+      await this.stakingToken.connect(u).approve(this.portal2.address, hre.ethers.constants.MaxUint256.toString());
     }
   });
 
