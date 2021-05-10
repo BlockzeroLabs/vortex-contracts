@@ -28,7 +28,6 @@ contract Portal is ReentrancyGuard {
     uint256[] public rewardPerTokenStaked;
     uint256[] public totalRewards;
     uint256[] public totalRewardRatios;
-    uint256[] public neverToBeHarvestedReward;
 
     address[] public tokensReward;
     IERC20Metadata public immutable portalToken;
@@ -64,7 +63,6 @@ contract Portal is ReentrancyGuard {
             rewardPerTokenStaked.push(0);
             totalRewardRatios.push(0);
             totalRewards.push(0);
-            neverToBeHarvestedReward.push(0);
         }
     }
 
@@ -160,10 +158,6 @@ contract Portal is ReentrancyGuard {
                         uint256 newReward = numberOfBlocksSinceLastUpdate * rewardPerBlock[i];
                         uint256 rewardPerTokenIncrease = (newReward * getTokenMultiplier(tokensReward[i])) / totalStaked;
                         rewardPerTokenStaked[i] = rewardPerTokenStaked[i] + rewardPerTokenIncrease;
-                    }
-                } else {
-                    for (uint256 i = 0; i < tokensReward.length; i++) {
-                        neverToBeHarvestedReward[i] = neverToBeHarvestedReward[i] + (numberOfBlocksSinceLastUpdate * rewardPerBlock[i]);
                     }
                 }
 
@@ -392,8 +386,6 @@ contract Portal is ReentrancyGuard {
         }
 
         endBlock = newEndBlock;
-        // TODO: I believe this needs to be called here after the removal, but please check if that's correct
-        // updatePortalData();
     }
 
     function removeReward() public nonReentrant {
@@ -425,8 +417,5 @@ contract Portal is ReentrancyGuard {
             totalRewards[i] = totalRewards[i] - providerPortion;
             rewardPerBlock[i] = (nonDistributedReward - providerPortion) / (endBlock - block.number);
         }
-
-        // TODO: I believe this needs to be called here after the removal, but please check if that's correct
-        // updatePortalData();
     }
 }
