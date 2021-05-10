@@ -71,8 +71,5 @@ export function shouldBehaveLikePortal(): void {
 
     const result = await this.portal.getPortalInfo();
     console.log(result[7][0].toString());
-
-    const never = await this.portal.neverToBeHarvestedReward(0);
-    console.log("never:", never.toString());
   });
 }
