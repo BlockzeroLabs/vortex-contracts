@@ -24,7 +24,6 @@ contract Portal is ReentrancyGuard {
     uint256 public totalStaked;
     uint256 public lastBlockUpdate;
 
-    uint256[] public portalDebt;
     uint256[] public rewardPerBlock;
     uint256[] public rewardPerTokenStaked;
     uint256[] public totalRewards;
@@ -64,7 +63,6 @@ contract Portal is ReentrancyGuard {
             rewardPerTokenStaked.push(0);
             totalRewardRatios.push(0);
             totalRewards.push(0);
-            portalDebt.push(0);
         }
     }
 
@@ -91,7 +89,6 @@ contract Portal is ReentrancyGuard {
             console.log("\nrewardPerTokenStaked on stake:", rewardPerTokenStaked[i]);
             uint256 totalDebt = (user.amount * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
             user.debt[i] = totalDebt;
-            portalDebt[i] = portalDebt[i] + totalDebt;
         }
 
         portalToken.safeTransferFrom(msg.sender, address(this), _amount);
@@ -131,12 +128,6 @@ contract Portal is ReentrancyGuard {
 
         for (uint256 i = 0; i < tokensReward.length; i++) {
             uint256 totalDebt = (user.amount * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
-
-            if (portalDebt[i] > 0) {
-                uint256 totalDebtDiff = user.debt[i] - totalDebt;
-                portalDebt[i] = portalDebt[i] - totalDebtDiff;
-            }
-
             user.debt[i] = totalDebt;
         }
 
@@ -172,28 +163,6 @@ contract Portal is ReentrancyGuard {
                 lastBlockUpdate = latestBlock;
             }
         }
-    }
-
-    function extend(uint256 _endBlock, uint256[] calldata _rewardsPerBlock) external nonReentrant {
-        require(_endBlock >= endBlock, "Portal:: invalid end block.");
-        require(_rewardsPerBlock.length == tokensReward.length, "Portal:: invalid rewards length.");
-        updatePortalData();
-
-        for (uint256 i = 0; i < _rewardsPerBlock.length; i++) {
-            rewardPerBlock[i] = _rewardsPerBlock[i];
-        }
-        endBlock = _endBlock;
-    }
-
-    function withdrawRewards(address _user, address _token) external nonReentrant {
-        uint256 currentReward = IERC20Metadata(_token).balanceOf(address(this));
-        require(currentReward > 0, "Portal:: no rewards.");
-        require(_token != address(portalToken), "Portal:: invalid token.");
-
-        for (uint256 i = 0; i < tokensReward.length; i++) {
-            require(_token != tokensReward[i], "Portal:: cannot withdraw from token rewards.");
-        }
-        IERC20Metadata(_token).safeTransfer(_user, currentReward);
     }
 
     // solhint-disable-next-line
@@ -380,7 +349,7 @@ contract Portal is ReentrancyGuard {
 
             console.log("rewardPerTokenStaked:", rewardPerTokenStaked[i]);
             uint256 distributedReward = (totalStaked * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
-            uint256 nonDistributedReward = totalRewards[i] - distributedReward + portalDebt[i];
+            uint256 nonDistributedReward = totalRewards[i] - distributedReward;
 
             uint256 precision = getTokenMultiplier(tokensReward[i]);
             uint256 newRewardRatio = nonDistributedReward == 0 ? precision : (_tokenAmounts[i] * precision) / nonDistributedReward;
@@ -411,7 +380,7 @@ contract Portal is ReentrancyGuard {
             console.log("rewardPerTokenStaked:", rewardPerTokenStaked[i]);
             uint256 distributedReward = (totalStaked * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
             console.log("distributedReward:", distributedReward);
-            uint256 nonDistributedReward = totalRewards[i] - distributedReward + portalDebt[i];
+            uint256 nonDistributedReward = totalRewards[i] - distributedReward;
 
             uint256 providerPortion = (nonDistributedReward * provider[i]) / totalRewardRatios[i];
             console.log("providerPortion:", providerPortion);
