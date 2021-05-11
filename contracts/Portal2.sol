@@ -9,37 +9,59 @@ import "hardhat/console.sol";
 contract Portal2 is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
+    struct User {
+        uint256 balance;
+        uint256[] userRewardPerTokenPaid;
+        uint256[] rewards;
+    }
+
     uint256 public endBlock;
-    uint256 public rewardRate;
     uint256 public rewardsDuration;
     uint256 public lastBlockUpdate;
-    uint256 public rewardPerTokenSnapshot;
     uint256 public totalStaked;
-    uint256 public distributedReward;
-    uint256 public totalRewardPerTokenSnapshot;
 
-    mapping(address => uint256) public userRewardPerTokenPaid;
-    mapping(address => uint256) public rewards;
-    mapping(address => uint256) public balances;
+    uint256[] public rewardRate;
+    uint256[] public totalRewards;
+    uint256[] public rewardPerTokenSnapshot;
+    uint256[] public distributedReward;
+    uint256[] public totalRewardPerTokenSnapshot;
 
-    IERC20 public rewardsToken;
+    mapping(address => User) public users;
+
+    IERC20[] public rewardsToken;
     IERC20 public stakingToken;
 
     constructor(
         uint256 _endBlock,
-        address _rewardsToken,
+        address[] memory _rewardsToken,
         address _stakingToken
     ) {
-        rewardsToken = IERC20(_rewardsToken);
-        stakingToken = IERC20(_stakingToken);
         endBlock = _endBlock;
+        stakingToken = IERC20(_stakingToken);
+
+        for (uint256 i = 0; i < _rewardsToken.length; i++) {
+            rewardsToken.push(IERC20(_rewardsToken[i]));
+            rewardRate.push(0);
+            totalRewards.push(0);
+            rewardPerTokenSnapshot.push(0);
+            distributedReward.push(0);
+            totalRewardPerTokenSnapshot.push(0);
+        }
     }
 
     function stake(uint256 amount) external nonReentrant {
+        User storage user = users[msg.sender];
+
+        // Init user on first call.
+        for (uint256 i = user.rewards.length; i < rewardsToken.length; i++) {
+            user.rewards.push(0);
+            user.userRewardPerTokenPaid.push(0);
+        }
+
         updateReward();
         require(amount > 0, "Cannot stake 0");
         totalStaked = totalStaked + amount;
-        balances[msg.sender] = balances[msg.sender] + amount;
+        user.balance = user.balance + amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
     }
 
@@ -47,76 +69,110 @@ contract Portal2 is ReentrancyGuard {
         updateReward();
         require(amount > 0, "Cannot withdraw 0");
         totalStaked = totalStaked - amount;
-        balances[msg.sender] = balances[msg.sender] - amount;
+        users[msg.sender].balance = users[msg.sender].balance - amount;
         stakingToken.safeTransfer(msg.sender, amount);
     }
 
     function harvest() public nonReentrant {
+        User storage user = users[msg.sender];
         updateReward();
-        uint256 reward = rewards[msg.sender];
-        if (reward > 0) {
-            rewards[msg.sender] = 0;
-            rewardsToken.safeTransfer(msg.sender, reward);
+
+        for (uint256 i = 0; i < rewardsToken.length; i++) {
+            uint256 reward = user.rewards[i];
+
+            if (reward > 0) {
+                user.rewards[i] = 0;
+                rewardsToken[i].safeTransfer(msg.sender, reward);
+            }
         }
     }
 
     function exit() external {
-        withdraw(balances[msg.sender]);
+        withdraw(users[msg.sender].balance);
         harvest();
     }
 
-    function addReward(uint256 reward, uint256 newEndBlock) external {
+    function addReward(uint256[] memory rewards, uint256 newEndBlock) external {
+        User storage user = users[msg.sender];
+
+        // Init user on first call.
+        for (uint256 i = user.rewards.length; i < rewardsToken.length; i++) {
+            user.rewards.push(0);
+            user.userRewardPerTokenPaid.push(0);
+        }
+
         updateReward();
 
-        uint256 remainingBlocks = endBlock - block.number;
-        uint256 remainingReward = remainingBlocks * rewardRate;
-
         rewardsDuration = newEndBlock - block.number;
-        rewardRate = (reward + remainingReward) / rewardsDuration;
 
-        rewardsToken.safeTransferFrom(msg.sender, address(this), reward);
+        for (uint256 i = 0; i < rewardsToken.length; i++) {
+            if (totalRewards[i] > 0) {
+                uint256 remainingReward = totalRewards[i] - totalEarned(i);
+                rewardRate[i] = (rewards[i] + remainingReward) / rewardsDuration;
+            } else {
+                rewardRate[i] = rewards[i] / rewardsDuration;
+            }
 
-        uint256 balance = rewardsToken.balanceOf(address(this));
-        require(rewardRate <= balance / rewardsDuration, "Provided reward too high");
+            rewardsToken[i].safeTransferFrom(msg.sender, address(this), rewards[i]);
+            totalRewards[i] = totalRewards[i] + rewards[i];
+        }
 
         lastBlockUpdate = block.number;
         endBlock = newEndBlock;
+    }
+
+    function rewardPerTokenStaked(uint256 tokenIndex) public view returns (uint256) {
+        return
+            totalStaked > 0
+                ? rewardPerTokenSnapshot[tokenIndex] +
+                    (((lastBlockRewardIsApplicable() - lastBlockUpdate) * rewardRate[tokenIndex] * 1e18) / totalStaked)
+                : rewardPerTokenSnapshot[tokenIndex];
+    }
+
+    function earned(address account, uint256 tokenIndex) public view returns (uint256) {
+        User memory user = users[account];
+
+        return
+            user.rewards[tokenIndex] +
+            ((user.balance * (rewardPerTokenStaked(tokenIndex) - user.userRewardPerTokenPaid[tokenIndex])) / 1e18);
+    }
+
+    function totalEarned(uint256 tokenIndex) public view returns (uint256) {
+        return
+            distributedReward[tokenIndex] +
+            ((totalStaked * (rewardPerTokenStaked(tokenIndex) - totalRewardPerTokenSnapshot[tokenIndex])) / 1e18);
     }
 
     function lastBlockRewardIsApplicable() public view returns (uint256) {
         return block.number > endBlock ? endBlock : block.number;
     }
 
-    function rewardPerTokenStaked() public view returns (uint256) {
-        if (totalStaked == 0) {
-            return rewardPerTokenSnapshot;
-        }
-        return rewardPerTokenSnapshot + (((lastBlockRewardIsApplicable() - lastBlockUpdate) * rewardRate * 1e18) / totalStaked);
-    }
-
-    function totalEarned() public view returns (uint256) {
-        return distributedReward + ((totalStaked * (rewardPerTokenStaked() - totalRewardPerTokenSnapshot)) / 1e18);
-    }
-
-    function earned(address account) public view returns (uint256) {
-        return rewards[account] + ((balances[account] * (rewardPerTokenStaked() - userRewardPerTokenPaid[account])) / 1e18);
-    }
-
-    function harvestForDuration() external view returns (uint256) {
-        return rewardRate * rewardsDuration;
-    }
-
-    function getHarvested() external view returns (uint256) {
-        return rewardPerTokenStaked() * totalStaked;
+    function harvestForDuration(uint256 tokenIndex) public view returns (uint256) {
+        return rewardRate[tokenIndex] * rewardsDuration;
     }
 
     function updateReward() internal {
-        address account = msg.sender;
-        rewardPerTokenSnapshot = rewardPerTokenStaked();
-        lastBlockUpdate = lastBlockRewardIsApplicable();
-        rewards[account] = earned(account);
-        distributedReward = totalEarned();
-        userRewardPerTokenPaid[account] = rewardPerTokenSnapshot;
-        totalRewardPerTokenSnapshot = rewardPerTokenSnapshot;
+        User storage user = users[msg.sender];
+
+        uint256 _lastBlockRewardIsApplicable = lastBlockRewardIsApplicable();
+        for (uint256 i = 0; i < rewardsToken.length; i++) {
+            if (totalStaked > 0) {
+                rewardPerTokenSnapshot[i] =
+                    rewardPerTokenSnapshot[i] +
+                    (((_lastBlockRewardIsApplicable - lastBlockUpdate) * rewardRate[i] * 1e18) / totalStaked);
+            }
+
+            distributedReward[i] =
+                distributedReward[i] +
+                ((totalStaked * (rewardPerTokenSnapshot[i] - totalRewardPerTokenSnapshot[i])) / 1e18);
+
+            user.rewards[i] = user.rewards[i] + ((user.balance * (rewardPerTokenSnapshot[i] - user.userRewardPerTokenPaid[i])) / 1e18);
+
+            user.userRewardPerTokenPaid[i] = rewardPerTokenSnapshot[i];
+
+            totalRewardPerTokenSnapshot[i] = rewardPerTokenSnapshot[i];
+        }
+
+        lastBlockUpdate = _lastBlockRewardIsApplicable;
     }
 }
