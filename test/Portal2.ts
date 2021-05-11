@@ -41,7 +41,7 @@ describe("Unit tests", function () {
     // Deploy Portal
     const portalArtifact: Artifact = await hre.artifacts.readArtifact("Portal2");
     this.portal2 = <Portal2>(
-      await deployContract(this.signers.admin, portalArtifact, [_endBlock, this.rewards[0].address, this.stakingToken.address])
+      await deployContract(this.signers.admin, portalArtifact, [_endBlock, [this.rewards[0].address], this.stakingToken.address])
     );
 
     // Mint and Approve reward tokens
