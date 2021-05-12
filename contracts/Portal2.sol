@@ -128,14 +128,9 @@ contract Portal2 is ReentrancyGuard {
                 rewardRate[i] = rewards[i] / rewardsDuration;
             }
 
-            console.log("remainingReward ", remainingReward);
-
             uint256 newRewardRatio = remainingReward == 0 ? 1e18 : (rewards[i] * 1e18) / remainingReward;
-            console.log("newRewardRatio: ", newRewardRatio);
             providerRatios[i] = providerRatios[i] + newRewardRatio;
-            console.log("providerRatios: ", providerRatios[i]);
             totalRewardRatios[i] = totalRewardRatios[i] + providerRatios[i];
-            console.log("totalRewardRatios: ", totalRewardRatios[i]);
 
             rewardsToken[i].safeTransferFrom(msg.sender, address(this), rewards[i]);
             totalRewards[i] = totalRewards[i] + rewards[i];
@@ -153,10 +148,8 @@ contract Portal2 is ReentrancyGuard {
         rewardsDuration = endBlock - block.number;
 
         for (uint256 i = 0; i < rewardsToken.length; i++) {
-            console.log("totalEarned", totalEarned(i));
             uint256 remainingReward = totalRewards[i] - totalEarned(i);
 
-            console.log("remainingReward:", remainingReward);
             uint256 providerPortion = (remainingReward * providerRatios[i]) / totalRewardRatios[i];
             console.log("providerPortion: ", providerPortion);
             rewardsToken[i].safeTransfer(msg.sender, providerPortion);
@@ -164,6 +157,7 @@ contract Portal2 is ReentrancyGuard {
             totalRewardRatios[i] = totalRewardRatios[i] - providerRatios[i];
             providerRatios[i] = 0;
 
+            totalRewards[i] = totalRewards[i] - providerPortion;
             rewardRate[i] = (remainingReward - providerPortion) / rewardsDuration;
         }
 
