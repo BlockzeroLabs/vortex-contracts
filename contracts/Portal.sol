@@ -4,393 +4,222 @@ pragma solidity 0.8.4;
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-
+import "./interfaces/IMigrator.sol";
 import "hardhat/console.sol";
 
 contract Portal is ReentrancyGuard {
-    using SafeERC20 for IERC20Metadata;
+    using SafeERC20 for IERC20;
 
-    struct UserInfo {
-        uint256 amount;
-        uint256[] debt;
-        uint256[] reward;
+    struct User {
+        uint256 balance;
+        uint256[] userRewardPerTokenPaid;
+        uint256[] rewards;
     }
-
-    uint256 public immutable startBlock;
-    uint256 public immutable userStakeLimit;
-    uint256 public immutable totalStakeLimit;
 
     uint256 public endBlock;
-    uint256 public totalStaked;
+    uint256 public rewardsDuration;
     uint256 public lastBlockUpdate;
+    uint256 public totalStaked;
 
-    uint256[] public rewardPerBlock;
-    uint256[] public rewardPerTokenStaked;
+    uint256[] public rewardRate;
     uint256[] public totalRewards;
+    uint256[] public rewardPerTokenSnapshot;
+    uint256[] public distributedReward;
+    uint256[] public totalRewardPerTokenSnapshot;
     uint256[] public totalRewardRatios;
+    uint256[] public minimumRewardRate;
 
-    address[] public tokensReward;
-    IERC20Metadata public immutable portalToken;
-
+    mapping(address => User) public users;
     mapping(address => uint256[]) public providerRewardRatios;
-    mapping(address => UserInfo) public userInfo;
+
+    IERC20[] public rewardsToken;
+    IERC20 public stakingToken;
 
     constructor(
-        uint256 _startBlock,
         uint256 _endBlock,
-        uint256 _userStakeLimit,
-        uint256 _totalStakeLimit,
-        uint256[] memory _rewardPerBlock,
-        address[] memory _tokensReward,
-        IERC20Metadata _portalToken
+        address[] memory _rewardsToken,
+        uint256[] memory _minimumRewardRate,
+        address _stakingToken
     ) {
-        require(_startBlock > block.number, "Portal:: invalid start block.");
-        require(_endBlock > _startBlock, "Portal:: invalid end block.");
-        require(_rewardPerBlock.length == _tokensReward.length, "Portal:: invalid rewards arrays.");
-        require(_userStakeLimit != 0, "Portal:: invalid user stake limit.");
-        require(_totalStakeLimit != 0, "Portal:: invalid total stake limit.");
-
-        portalToken = _portalToken;
-        rewardPerBlock = _rewardPerBlock;
-        startBlock = _startBlock;
         endBlock = _endBlock;
-        tokensReward = _tokensReward;
-        lastBlockUpdate = _startBlock;
-        userStakeLimit = _userStakeLimit;
-        totalStakeLimit = _totalStakeLimit;
+        stakingToken = IERC20(_stakingToken);
+        minimumRewardRate = _minimumRewardRate;
 
-        for (uint256 i = 0; i < tokensReward.length; i++) {
-            rewardPerTokenStaked.push(0);
-            totalRewardRatios.push(0);
+        for (uint256 i = 0; i < _rewardsToken.length; i++) {
+            rewardsToken.push(IERC20(_rewardsToken[i]));
+            rewardRate.push(0);
             totalRewards.push(0);
+            rewardPerTokenSnapshot.push(0);
+            distributedReward.push(0);
+            totalRewardPerTokenSnapshot.push(0);
+            totalRewardRatios.push(0);
         }
     }
 
-    function stake(uint256 _amount) public nonReentrant {
-        _stake(_amount, msg.sender);
-    }
+    function stake(uint256 amount) external nonReentrant {
+        User storage user = users[msg.sender];
 
-    function _stake(uint256 _amount, address _user) internal {
-        require(_amount > 0, "Portal:: cannot stake 0.");
-        require(block.number > startBlock, "Portal:: portal not opened yet.");
-        require(block.number <= endBlock, "Portal:: portal closed.");
-        require(totalStaked + _amount <= totalStakeLimit, "Portal:: total stake limit exceed.");
-
-        UserInfo storage user = userInfo[_user];
-        require(user.amount + _amount <= userStakeLimit, "Portal:: user stake limit exceed.");
-
-        updatePortalData();
-        updateUserReward(_user);
-
-        user.amount = user.amount + _amount;
-        totalStaked = totalStaked + _amount;
-
-        for (uint256 i = 0; i < tokensReward.length; i++) {
-            console.log("\nrewardPerTokenStaked on stake:", rewardPerTokenStaked[i]);
-            uint256 totalDebt = (user.amount * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
-            user.debt[i] = totalDebt;
+        for (uint256 i = user.rewards.length; i < rewardsToken.length; i++) {
+            user.rewards.push(0);
+            user.userRewardPerTokenPaid.push(0);
         }
 
-        portalToken.safeTransferFrom(msg.sender, address(this), _amount);
+        updateReward(user);
+        require(amount > 0, "Portal: cannot stake 0");
+        totalStaked = totalStaked + amount;
+        user.balance = user.balance + amount;
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    function withdraw(uint256 amount) public nonReentrant {
+        User storage user = users[msg.sender];
+        updateReward(user);
+        require(amount > 0, "Portal: cannot withdraw 0");
+        totalStaked = totalStaked - amount;
+        user.balance = user.balance - amount;
+        stakingToken.safeTransfer(msg.sender, amount);
     }
 
     function harvest() public nonReentrant {
-        _harvest(msg.sender);
-    }
+        User storage user = users[msg.sender];
+        updateReward(user);
 
-    function _harvest(address _user) internal {
-        UserInfo storage user = userInfo[_user];
-        updatePortalData();
-        updateUserReward(_user);
-
-        for (uint256 i = 0; i < tokensReward.length; i++) {
-            uint256 reward = user.reward[i];
-            user.reward[i] = 0;
-            totalRewards[i] = totalRewards[i] - reward;
-            IERC20Metadata(tokensReward[i]).safeTransfer(_user, reward);
-        }
-    }
-
-    function withdraw(uint256 _amount) public nonReentrant {
-        _withdraw(_amount, msg.sender);
-    }
-
-    function _withdraw(uint256 _amount, address _user) internal {
-        require(_amount > 0, "Portal:: zero withdraw.");
-
-        UserInfo storage user = userInfo[_user];
-
-        updatePortalData();
-        updateUserReward(_user);
-
-        user.amount = user.amount - _amount;
-        totalStaked = totalStaked - _amount;
-
-        for (uint256 i = 0; i < tokensReward.length; i++) {
-            uint256 totalDebt = (user.amount * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
-            user.debt[i] = totalDebt;
-        }
-
-        portalToken.safeTransfer(_user, _amount);
-    }
-
-    function exit() public nonReentrant {
-        _exit(msg.sender);
-    }
-
-    function _exit(address _user) internal {
-        UserInfo memory user = userInfo[_user];
-        _harvest(_user);
-        _withdraw(user.amount, _user);
-    }
-
-    function updatePortalData() public {
-        uint256 currentBlock = block.number;
-
-        if (currentBlock > lastBlockUpdate) {
-            uint256 latestBlock = (currentBlock < endBlock) ? currentBlock : endBlock;
-            uint256 numberOfBlocksSinceLastUpdate = latestBlock - lastBlockUpdate;
-
-            if (numberOfBlocksSinceLastUpdate > 0) {
-                if (totalStaked > 0) {
-                    for (uint256 i = 0; i < tokensReward.length; i++) {
-                        uint256 newReward = numberOfBlocksSinceLastUpdate * rewardPerBlock[i];
-                        uint256 rewardPerTokenIncrease = (newReward * getTokenMultiplier(tokensReward[i])) / totalStaked;
-                        rewardPerTokenStaked[i] = rewardPerTokenStaked[i] + rewardPerTokenIncrease;
-                    }
-                }
-
-                lastBlockUpdate = latestBlock;
+        for (uint256 i = 0; i < rewardsToken.length; i++) {
+            uint256 reward = user.rewards[i];
+            if (reward > 0) {
+                user.rewards[i] = 0;
+                rewardsToken[i].safeTransfer(msg.sender, reward);
             }
         }
     }
 
-    // solhint-disable-next-line
-    function updateUserReward(address _user) internal {
-        UserInfo storage user = userInfo[_user];
-        uint256 tokensRewardLength = tokensReward.length;
+    function exit() external {
+        withdraw(users[msg.sender].balance);
+        harvest();
+    }
 
-        for (uint256 i = user.debt.length; i < tokensRewardLength; i++) {
-            user.debt.push(0);
+    function addReward(uint256[] memory rewards, uint256 newEndBlock) external nonReentrant {
+        require(newEndBlock >= endBlock, "Portal: invalid end block");
+
+        User storage user = users[msg.sender];
+        for (uint256 i = user.rewards.length; i < rewardsToken.length; i++) {
+            user.rewards.push(0);
+            user.userRewardPerTokenPaid.push(0);
         }
 
-        for (uint256 i = user.reward.length; i < tokensRewardLength; i++) {
-            user.reward.push(0);
+        uint256[] storage providerRatios = providerRewardRatios[msg.sender];
+        for (uint256 i = providerRatios.length; i < rewardsToken.length; i++) {
+            providerRatios.push(0);
         }
 
-        if (user.amount > 0) {
-            for (uint256 tokenIndex = 0; tokenIndex < tokensRewardLength; tokenIndex++) {
-                uint256 totalDebt = (user.amount * rewardPerTokenStaked[tokenIndex]) / getTokenMultiplier(tokensReward[tokenIndex]);
-                uint256 pendingDebt = totalDebt - user.debt[tokenIndex];
+        updateReward(user);
 
-                if (pendingDebt > 0) {
-                    user.reward[tokenIndex] = user.reward[tokenIndex] + pendingDebt;
-                    user.debt[tokenIndex] = totalDebt;
-                }
-            }
-        }
-    }
+        rewardsDuration = newEndBlock - block.number;
 
-    function userBalanceOf(address _user) public view returns (uint256) {
-        UserInfo memory user = userInfo[_user];
-        return user.amount;
-    }
+        for (uint256 i = 0; i < rewardsToken.length; i++) {
+            uint256 remainingReward = 0;
 
-    function getUserRewardDebt(address _userAddress, uint256 _index) public view returns (uint256) {
-        UserInfo memory user = userInfo[_userAddress];
-        return user.debt[_index];
-    }
-
-    function getUserOwedTokens(address _userAddress, uint256 _index) public view returns (uint256) {
-        UserInfo memory user = userInfo[_userAddress];
-        return user.reward[_index];
-    }
-
-    function portalStarted() public view returns (bool) {
-        return block.number >= startBlock;
-    }
-
-    function getUserReward(address _userAddress, uint256 tokenIndex) public view returns (uint256) {
-        uint256 currentBlock = block.number;
-        uint256 latestBlock = (currentBlock < endBlock) ? currentBlock : endBlock;
-        uint256 numberOfBlocksSinceLastUpdate = latestBlock - lastBlockUpdate;
-        uint256 tokenMultiplier = getTokenMultiplier(tokensReward[tokenIndex]);
-
-        uint256 rewardForLastPeriod = numberOfBlocksSinceLastUpdate * rewardPerBlock[tokenIndex];
-        uint256 rewardPerTokenIncrease = (rewardForLastPeriod * tokenMultiplier) / totalStaked;
-        uint256 currentMultiplier = rewardPerTokenStaked[tokenIndex] + rewardPerTokenIncrease;
-
-        UserInfo memory user = userInfo[_userAddress];
-
-        uint256 totalDebt = (user.amount * currentMultiplier) / tokenMultiplier;
-        uint256 pendingDebt = totalDebt - user.debt[tokenIndex];
-        return user.reward[tokenIndex] + pendingDebt;
-    }
-
-    function getUserTokensOwedLength(address _userAddress) public view returns (uint256) {
-        UserInfo memory user = userInfo[_userAddress];
-        return user.reward.length;
-    }
-
-    function getUserRewardDebtLength(address _userAddress) public view returns (uint256) {
-        UserInfo memory user = userInfo[_userAddress];
-        return user.debt.length;
-    }
-
-    function portalReward(uint256 tokenIndex) public view returns (uint256) {
-        uint256 rewardsPeriod = endBlock - startBlock;
-        return rewardPerBlock[tokenIndex] * rewardsPeriod;
-    }
-
-    function getRewardTokensCount() public view returns (uint256) {
-        return tokensReward.length;
-    }
-
-    function getTokenMultiplier(address _token) internal view returns (uint256) {
-        uint256 decimals = IERC20Metadata(_token).decimals();
-        return 10**decimals;
-    }
-
-    function getPortalInfo()
-        public
-        view
-        returns (
-            uint256,
-            uint256,
-            uint256,
-            uint256,
-            address[] memory,
-            address,
-            uint256,
-            uint256[] memory,
-            uint256[] memory,
-            uint256[] memory
-        )
-    {
-        return (
-            endBlock,
-            startBlock,
-            userStakeLimit,
-            totalStakeLimit,
-            tokensReward,
-            address(portalToken),
-            lastBlockUpdate,
-            totalRewards,
-            rewardPerBlock,
-            rewardPerTokenStaked
-        );
-    }
-
-    function getStartAndEnd() public view returns (uint256, uint256) {
-        return (endBlock, startBlock);
-    }
-
-    function getLimits() public view returns (uint256, uint256) {
-        return (userStakeLimit, totalStakeLimit);
-    }
-
-    function getTokens() public view returns (address[] memory, address) {
-        return (tokensReward, address(portalToken));
-    }
-
-    function getLastBlockUpdate() public view returns (uint256) {
-        return lastBlockUpdate;
-    }
-
-    function getTotalRewards(uint256 _tokenIndex) public view returns (uint256) {
-        return totalRewards[_tokenIndex];
-    }
-
-    function getRewardPerBlock(uint256 _tokenIndex) public view returns (uint256) {
-        return rewardPerBlock[_tokenIndex];
-    }
-
-    function getRewardPerTokenStaked(uint256 _tokenIndex) public view returns (uint256) {
-        return rewardPerTokenStaked[_tokenIndex];
-    }
-
-    function getRefundableReward(address _provider, uint256 _tokenIndex) public view returns (uint256) {
-        uint256[] storage provider = providerRewardRatios[_provider];
-
-        uint256 balance = portalToken.balanceOf(address(this));
-        uint256 distributedReward = (balance * rewardPerTokenStaked[_tokenIndex]) / getTokenMultiplier(tokensReward[_tokenIndex]);
-        uint256 nonDistributedReward = totalRewards[_tokenIndex] - distributedReward;
-
-        return (nonDistributedReward * provider[_tokenIndex]) / totalRewardRatios[_tokenIndex];
-    }
-
-    function addReward(uint256[] memory _tokenAmounts, uint256 _duration) public nonReentrant {
-        _addReward(_tokenAmounts, _duration, msg.sender);
-    }
-
-    function _addReward(
-        uint256[] memory _tokenAmounts,
-        uint256 _duration,
-        address _provider
-    ) internal {
-        require(_tokenAmounts.length == tokensReward.length, "Portal:: invalid tokens length.");
-        require(_duration != 0, "Portal:: duration cannot be 0.");
-
-        updatePortalData();
-
-        uint256[] storage provider = providerRewardRatios[_provider];
-
-        uint256 newEndBlock = block.number + _duration > endBlock ? block.number + _duration : endBlock;
-
-        for (uint256 i = 0; i < _tokenAmounts.length; i++) {
-            console.log("\n");
-            require(_tokenAmounts[i] > 0, "Portal:: reward cannot be 0.");
-
-            if (provider.length < _tokenAmounts.length) {
-                provider.push(0);
+            if (totalRewards[i] > 0) {
+                remainingReward = totalRewards[i] - totalEarned(i);
+                rewardRate[i] = (rewards[i] + remainingReward) / rewardsDuration;
+            } else {
+                rewardRate[i] = rewards[i] / rewardsDuration;
             }
 
-            IERC20Metadata(tokensReward[i]).safeTransferFrom(_provider, address(this), _tokenAmounts[i]);
-
-            console.log("rewardPerTokenStaked:", rewardPerTokenStaked[i]);
-            uint256 distributedReward = (totalStaked * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
-            uint256 nonDistributedReward = totalRewards[i] - distributedReward;
-
-            uint256 precision = getTokenMultiplier(tokensReward[i]);
-            uint256 newRewardRatio = nonDistributedReward == 0 ? precision : (_tokenAmounts[i] * precision) / nonDistributedReward;
-
-            provider[i] = provider[i] + newRewardRatio;
-            totalRewardRatios[i] = totalRewardRatios[i] + provider[i];
-
-            totalRewards[i] = totalRewards[i] + _tokenAmounts[i];
-            rewardPerBlock[i] = (nonDistributedReward + _tokenAmounts[i]) / (newEndBlock - block.number);
+            require(minimumRewardRate[i] <= rewardRate[i], "Portal: invalid reward rate");
+            uint256 newRewardRatio = remainingReward == 0 ? 1e18 : (rewards[i] * 1e18) / remainingReward;
+            providerRatios[i] = providerRatios[i] + newRewardRatio;
+            totalRewardRatios[i] = totalRewardRatios[i] + providerRatios[i];
+            rewardsToken[i].safeTransferFrom(msg.sender, address(this), rewards[i]);
+            totalRewards[i] = totalRewards[i] + rewards[i];
         }
 
+        lastBlockUpdate = block.number;
         endBlock = newEndBlock;
     }
 
-    function removeReward() public nonReentrant {
-        _removeReward(msg.sender);
+    function removeReward() external nonReentrant {
+        User storage user = users[msg.sender];
+        uint256[] storage providerRatios = providerRewardRatios[msg.sender];
+
+        updateReward(user);
+
+        rewardsDuration = endBlock - block.number;
+
+        for (uint256 i = 0; i < rewardsToken.length; i++) {
+            uint256 remainingReward = totalRewards[i] - totalEarned(i);
+            uint256 providerPortion = (remainingReward * providerRatios[i]) / totalRewardRatios[i];
+            totalRewardRatios[i] = totalRewardRatios[i] - providerRatios[i];
+            providerRatios[i] = 0;
+            totalRewards[i] = totalRewards[i] - providerPortion;
+            rewardRate[i] = (remainingReward - providerPortion) / rewardsDuration;
+            rewardsToken[i].safeTransfer(msg.sender, providerPortion);
+        }
+
+        lastBlockUpdate = block.number;
     }
 
-    function _removeReward(address _provider) internal {
-        uint256[] storage provider = providerRewardRatios[_provider];
+    function migrate(uint256 _amount, address _portal) external nonReentrant {
+        User storage user = users[msg.sender];
+        require(user.balance >= _amount, "Portal: migrate amount exceeds balance");
+        stakingToken.approve(_portal, _amount);
+        IMigrator(_portal).migrate(_amount);
+    }
 
-        require(endBlock > block.number, "Portal:: rewards distribution ended.");
+    function rewardPerTokenStaked(uint256 tokenIndex) public view returns (uint256) {
+        return
+            totalStaked > 0
+                ? rewardPerTokenSnapshot[tokenIndex] +
+                    (((lastBlockRewardIsApplicable() - lastBlockUpdate) * rewardRate[tokenIndex] * 1e18) / totalStaked)
+                : rewardPerTokenSnapshot[tokenIndex];
+    }
 
-        updatePortalData();
+    function earned(address account, uint256 tokenIndex) public view returns (uint256) {
+        User memory user = users[account];
+        return
+            user.rewards[tokenIndex] +
+            ((user.balance * (rewardPerTokenStaked(tokenIndex) - user.userRewardPerTokenPaid[tokenIndex])) / 1e18);
+    }
 
-        for (uint256 i = 0; i < tokensReward.length; i++) {
-            console.log("\n");
-            console.log("rewardPerTokenStaked:", rewardPerTokenStaked[i]);
-            uint256 distributedReward = (totalStaked * rewardPerTokenStaked[i]) / getTokenMultiplier(tokensReward[i]);
-            console.log("distributedReward:", distributedReward);
-            uint256 nonDistributedReward = totalRewards[i] - distributedReward;
+    function totalEarned(uint256 tokenIndex) public view returns (uint256) {
+        return
+            distributedReward[tokenIndex] +
+            ((totalStaked * (rewardPerTokenStaked(tokenIndex) - totalRewardPerTokenSnapshot[tokenIndex])) / 1e18);
+    }
 
-            uint256 providerPortion = (nonDistributedReward * provider[i]) / totalRewardRatios[i];
-            console.log("providerPortion:", providerPortion);
-            IERC20Metadata(tokensReward[i]).safeTransfer(_provider, providerPortion);
+    function lastBlockRewardIsApplicable() public view returns (uint256) {
+        return block.number > endBlock ? endBlock : block.number;
+    }
 
-            totalRewardRatios[i] = totalRewardRatios[i] - provider[i];
-            provider[i] = 0;
+    function harvestForDuration(uint256 tokenIndex) public view returns (uint256) {
+        return rewardRate[tokenIndex] * rewardsDuration;
+    }
 
-            totalRewards[i] = totalRewards[i] - providerPortion;
-            rewardPerBlock[i] = (nonDistributedReward - providerPortion) / (endBlock - block.number);
+    function updateReward(User storage user) internal {
+        uint256 _lastBlockRewardIsApplicable = lastBlockRewardIsApplicable();
+
+        for (uint256 i = 0; i < rewardsToken.length; i++) {
+            uint256 _rewardPerTokenSnapshot = rewardPerTokenSnapshot[i];
+
+            if (totalStaked > 0) {
+                _rewardPerTokenSnapshot =
+                    _rewardPerTokenSnapshot +
+                    (((_lastBlockRewardIsApplicable - lastBlockUpdate) * rewardRate[i] * 1e18) / totalStaked);
+            }
+
+            distributedReward[i] =
+                distributedReward[i] +
+                ((totalStaked * (_rewardPerTokenSnapshot - totalRewardPerTokenSnapshot[i])) / 1e18);
+
+            user.rewards[i] = user.rewards[i] + ((user.balance * (_rewardPerTokenSnapshot - user.userRewardPerTokenPaid[i])) / 1e18);
+
+            user.userRewardPerTokenPaid[i] = _rewardPerTokenSnapshot;
+
+            totalRewardPerTokenSnapshot[i] = _rewardPerTokenSnapshot;
+
+            rewardPerTokenSnapshot[i] = _rewardPerTokenSnapshot;
         }
+
+        lastBlockUpdate = _lastBlockRewardIsApplicable;
     }
 }
