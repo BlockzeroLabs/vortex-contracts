@@ -6,10 +6,10 @@ import { ERC20, Portal } from "../typechain";
 
 declare module "mocha" {
   export interface Context {
-    rewards: ERC20[];
-    stakingToken: ERC20;
     portal: Portal;
-    loadFixture: <T>(fixture: Fixture<T>) => Promise<T>;
+    stakingToken: ERC20;
+    rewards: ERC20[];
     signers: Signers;
+    loadFixture: <T>(fixture: Fixture<T>) => Promise<T>;
   }
 }
