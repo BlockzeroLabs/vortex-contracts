@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 import hre from "hardhat";
 
 export function shouldBehaveLikePortal(): void {
-  it("Integration tests", async function () {
+  it("Full scenarios", async function () {
     log("=========== PROVIDER 1 ===========");
     log("Add reward");
 

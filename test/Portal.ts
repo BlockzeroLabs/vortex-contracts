@@ -14,7 +14,7 @@ const config = {
   rewardsCount: 20,
 };
 
-describe("Unit tests", function () {
+describe("Integration tests", function () {
   before(async function () {
     this.signers = {} as Signers;
     this.rewards = [];
