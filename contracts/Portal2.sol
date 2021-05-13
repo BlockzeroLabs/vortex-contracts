@@ -25,8 +25,10 @@ contract Portal2 is ReentrancyGuard {
     uint256[] public rewardPerTokenSnapshot;
     uint256[] public distributedReward;
     uint256[] public totalRewardPerTokenSnapshot;
+    uint256[] public totalRewardRatios;
 
     mapping(address => User) public users;
+    mapping(address => uint256[]) public providerRewardRatios;
 
     IERC20[] public rewardsToken;
     IERC20 public stakingToken;
@@ -46,6 +48,7 @@ contract Portal2 is ReentrancyGuard {
             rewardPerTokenSnapshot.push(0);
             distributedReward.push(0);
             totalRewardPerTokenSnapshot.push(0);
+            totalRewardRatios.push(0);
         }
     }
 
@@ -80,6 +83,8 @@ contract Portal2 is ReentrancyGuard {
         for (uint256 i = 0; i < rewardsToken.length; i++) {
             uint256 reward = user.rewards[i];
 
+            console.log("reward: ", reward);
+
             if (reward > 0) {
                 user.rewards[i] = 0;
                 rewardsToken[i].safeTransfer(msg.sender, reward);
@@ -93,6 +98,7 @@ contract Portal2 is ReentrancyGuard {
     }
 
     function addReward(uint256[] memory rewards, uint256 newEndBlock) external {
+        require(newEndBlock >= endBlock, "New endblock cannot be before current endblock");
         User storage user = users[msg.sender];
 
         // Init user on first call.
@@ -101,17 +107,30 @@ contract Portal2 is ReentrancyGuard {
             user.userRewardPerTokenPaid.push(0);
         }
 
+        uint256[] storage providerRatios = providerRewardRatios[msg.sender];
+
+        // Init provider on first call.
+        for (uint256 i = providerRatios.length; i < rewardsToken.length; i++) {
+            providerRatios.push(0);
+        }
+
         updateReward();
 
         rewardsDuration = newEndBlock - block.number;
 
         for (uint256 i = 0; i < rewardsToken.length; i++) {
+            uint256 remainingReward = 0;
+
             if (totalRewards[i] > 0) {
-                uint256 remainingReward = totalRewards[i] - totalEarned(i);
+                remainingReward = totalRewards[i] - totalEarned(i);
                 rewardRate[i] = (rewards[i] + remainingReward) / rewardsDuration;
             } else {
                 rewardRate[i] = rewards[i] / rewardsDuration;
             }
+
+            uint256 newRewardRatio = remainingReward == 0 ? 1e18 : (rewards[i] * 1e18) / remainingReward;
+            providerRatios[i] = providerRatios[i] + newRewardRatio;
+            totalRewardRatios[i] = totalRewardRatios[i] + providerRatios[i];
 
             rewardsToken[i].safeTransferFrom(msg.sender, address(this), rewards[i]);
             totalRewards[i] = totalRewards[i] + rewards[i];
@@ -119,6 +138,30 @@ contract Portal2 is ReentrancyGuard {
 
         lastBlockUpdate = block.number;
         endBlock = newEndBlock;
+    }
+
+    function removeReward() external {
+        uint256[] storage providerRatios = providerRewardRatios[msg.sender];
+
+        updateReward();
+
+        rewardsDuration = endBlock - block.number;
+
+        for (uint256 i = 0; i < rewardsToken.length; i++) {
+            uint256 remainingReward = totalRewards[i] - totalEarned(i);
+
+            uint256 providerPortion = (remainingReward * providerRatios[i]) / totalRewardRatios[i];
+            console.log("providerPortion: ", providerPortion);
+            rewardsToken[i].safeTransfer(msg.sender, providerPortion);
+
+            totalRewardRatios[i] = totalRewardRatios[i] - providerRatios[i];
+            providerRatios[i] = 0;
+
+            totalRewards[i] = totalRewards[i] - providerPortion;
+            rewardRate[i] = (remainingReward - providerPortion) / rewardsDuration;
+        }
+
+        lastBlockUpdate = block.number;
     }
 
     function rewardPerTokenStaked(uint256 tokenIndex) public view returns (uint256) {
@@ -155,6 +198,7 @@ contract Portal2 is ReentrancyGuard {
         User storage user = users[msg.sender];
 
         uint256 _lastBlockRewardIsApplicable = lastBlockRewardIsApplicable();
+
         for (uint256 i = 0; i < rewardsToken.length; i++) {
             if (totalStaked > 0) {
                 rewardPerTokenSnapshot[i] =
