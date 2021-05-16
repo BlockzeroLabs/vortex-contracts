@@ -30,6 +30,7 @@ contract Portal is ReentrancyGuard {
 
     uint256 public stakeLimit;
 	uint256 public contractStakeLimit;
+    uint256 public distributionLimit;
 
     mapping(address => User) public users;
     mapping(address => uint256[]) public providerRewardRatios;
@@ -44,6 +45,7 @@ contract Portal is ReentrancyGuard {
         address _stakingToken
         uint256 _stakeLimit,
 		uint256 _contractStakeLimit
+		uint256 _distributionLimit
     ) {
         require(
             _endBlock > block.number,
@@ -57,6 +59,7 @@ contract Portal is ReentrancyGuard {
         minimumRewardRate = _minimumRewardRate;
         stakeLimit = _stakeLimit;
         contractStakeLimit = _contractStakeLimit;
+        distributionLimit = _distributionLimit;
 
         for (uint256 i = 0; i < _rewardsToken.length; i++) {
             rewardsToken.push(IERC20(_rewardsToken[i]));
@@ -216,7 +219,7 @@ contract Portal is ReentrancyGuard {
         for (uint256 i = 0; i < rewardsToken.length; i++) {
             uint256 _rewardPerTokenSnapshot = rewardPerTokenSnapshot[i];
 
-            if (totalStaked > 0) {
+            if (totalStaked > distributionLimit) {
                 _rewardPerTokenSnapshot =
                     _rewardPerTokenSnapshot +
                     (((_lastBlockRewardIsApplicable - lastBlockUpdate) * rewardRate[i] * 1e18) / totalStaked);
