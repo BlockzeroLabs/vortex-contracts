@@ -86,6 +86,42 @@ export function shouldBehaveLikePortal(): void {
     log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
     log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
   });
+
+  it("Distribution Limit Test", async function () {
+    log("=========== PROVIDER 1 ===========");
+    log("Add reward");
+
+    const rewardAmount = ethers.utils.parseEther("1000").toString();
+    await this.portal.connect(this.signers.providers[0]).addReward(
+      this.rewards.map(() => rewardAmount),
+      "1023",
+    );
+    log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
+    log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
+
+    await mineBlocks(hre.ethers.provider, 49);
+
+    log("\n=========== USER 1 ===========");
+    log("Stake");
+    await this.portal.connect(this.signers.users[0]).stake(ethers.utils.parseEther("1").toString());
+    log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
+    log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
+
+    await mineBlocks(hre.ethers.provider, 49);
+
+    log("Exit");
+    await this.portal.connect(this.signers.users[0]).harvest();
+    log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
+    log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
+
+    await mineBlocks(hre.ethers.provider, 49);
+
+    log("\n=========== PROVIDER 1 ===========");
+    log("Remove Reward");
+    await this.portal.connect(this.signers.providers[0]).removeReward();
+    log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
+    log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
+  });
 }
 
 async function mineBlocks(provider: ethers.providers.JsonRpcProvider, blocks: number): Promise<void> {

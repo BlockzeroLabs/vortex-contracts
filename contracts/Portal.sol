@@ -186,7 +186,7 @@ contract Portal is ReentrancyGuard {
 
     function rewardPerTokenStaked(uint256 tokenIndex) public view returns (uint256) {
         return
-            totalStaked > 0
+            totalStaked > distributionLimit
                 ? rewardPerTokenSnapshot[tokenIndex] +
                     (((lastBlockRewardIsApplicable() - lastBlockUpdate) * rewardRate[tokenIndex] * 1e18) / totalStaked)
                 : rewardPerTokenSnapshot[tokenIndex];
