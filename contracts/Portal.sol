@@ -28,6 +28,9 @@ contract Portal is ReentrancyGuard {
     uint256[] public totalRewardRatios;
     uint256[] public minimumRewardRate;
 
+    uint256 public stakeLimit;
+	uint256 public contractStakeLimit;
+
     mapping(address => User) public users;
     mapping(address => uint256[]) public providerRewardRatios;
 
@@ -39,10 +42,21 @@ contract Portal is ReentrancyGuard {
         address[] memory _rewardsToken,
         uint256[] memory _minimumRewardRate,
         address _stakingToken
+        uint256 _stakeLimit,
+		uint256 _contractStakeLimit
     ) {
+        require(
+            _endBlock > block.number,
+            "Portal: The end block must be in the future."
+        );
+        require(_stakeLimit != 0, "Portal: Stake limit needs to be more than 0");
+        require(_contractStakeLimit != 0, "Portal: Contract Stake limit needs to be more than 0");
+
         endBlock = _endBlock;
         stakingToken = IERC20(_stakingToken);
         minimumRewardRate = _minimumRewardRate;
+        stakeLimit = _stakeLimit;
+        contractStakeLimit = _contractStakeLimit;
 
         for (uint256 i = 0; i < _rewardsToken.length; i++) {
             rewardsToken.push(IERC20(_rewardsToken[i]));
@@ -65,6 +79,8 @@ contract Portal is ReentrancyGuard {
 
         updateReward(user);
         require(amount > 0, "Portal: cannot stake 0");
+        require(user.balance + amount <= stakeLimit, "Portal: user stake limit exceded")
+        require(totalStaked + amount <= contractStakeLimit, "Portal: cannot stake 0")
         totalStaked = totalStaked + amount;
         user.balance = user.balance + amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
