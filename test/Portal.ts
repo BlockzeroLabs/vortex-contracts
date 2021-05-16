@@ -46,6 +46,9 @@ describe("Integration tests", function () {
         this.rewards.map(m => m.address),
         this.rewards.map(() => "0"),
         this.stakingToken.address,
+        hre.ethers.utils.parseEther("100"),
+        hre.ethers.utils.parseEther("200"),
+        hre.ethers.utils.parseEther("2"),
       ])
     );
 
