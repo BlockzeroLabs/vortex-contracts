@@ -24,11 +24,10 @@ contract Portal is ReentrancyGuard {
     uint256[] public totalRewards;
     uint256[] public rewardPerTokenSnapshot;
     uint256[] public distributedReward;
-    uint256[] public totalRewardPerTokenSnapshot;
     uint256[] public totalRewardRatios;
     uint256[] public minimumRewardRate;
 
-    uint256 public stakeLimit;
+    uint256 public userStakeLimit;
     uint256 public contractStakeLimit;
     uint256 public distributionLimit;
 
@@ -54,7 +53,7 @@ contract Portal is ReentrancyGuard {
         endBlock = _endBlock;
         stakingToken = IERC20(_stakingToken);
         minimumRewardRate = _minimumRewardRate;
-        stakeLimit = _stakeLimit;
+        userStakeLimit = _stakeLimit;
         contractStakeLimit = _contractStakeLimit;
         distributionLimit = _distributionLimit;
 
@@ -64,7 +63,6 @@ contract Portal is ReentrancyGuard {
             totalRewards.push(0);
             rewardPerTokenSnapshot.push(0);
             distributedReward.push(0);
-            totalRewardPerTokenSnapshot.push(0);
             totalRewardRatios.push(0);
         }
     }
@@ -79,7 +77,7 @@ contract Portal is ReentrancyGuard {
 
         updateReward(user);
         require(amount > 0, "Portal: cannot stake 0");
-        require(user.balance + amount <= stakeLimit, "Portal: user stake limit exceeded");
+        require(user.balance + amount <= userStakeLimit, "Portal: user stake limit exceeded");
         require(totalStaked + amount <= contractStakeLimit, "Portal: contract stake limit exceeded");
         totalStaked = totalStaked + amount;
         user.balance = user.balance + amount;
@@ -199,7 +197,7 @@ contract Portal is ReentrancyGuard {
     function totalEarned(uint256 tokenIndex) public view returns (uint256) {
         return
             distributedReward[tokenIndex] +
-            ((totalStaked * (rewardPerTokenStaked(tokenIndex) - totalRewardPerTokenSnapshot[tokenIndex])) / 1e18);
+            ((totalStaked * (rewardPerTokenStaked(tokenIndex) - rewardPerTokenSnapshot[tokenIndex])) / 1e18);
     }
 
     function lastBlockRewardIsApplicable() public view returns (uint256) {
@@ -222,17 +220,11 @@ contract Portal is ReentrancyGuard {
                     (((_lastBlockRewardIsApplicable - lastBlockUpdate) * rewardRate[i] * 1e18) / totalStaked);
             }
 
-            distributedReward[i] =
-                distributedReward[i] +
-                ((totalStaked * (_rewardPerTokenSnapshot - totalRewardPerTokenSnapshot[i])) / 1e18);
+            distributedReward[i] = distributedReward[i] + ((totalStaked * (_rewardPerTokenSnapshot - rewardPerTokenSnapshot[i])) / 1e18);
+            rewardPerTokenSnapshot[i] = _rewardPerTokenSnapshot;
 
             user.rewards[i] = user.rewards[i] + ((user.balance * (_rewardPerTokenSnapshot - user.userRewardPerTokenPaid[i])) / 1e18);
-
             user.userRewardPerTokenPaid[i] = _rewardPerTokenSnapshot;
-
-            totalRewardPerTokenSnapshot[i] = _rewardPerTokenSnapshot;
-
-            rewardPerTokenSnapshot[i] = _rewardPerTokenSnapshot;
         }
 
         lastBlockUpdate = _lastBlockRewardIsApplicable;
