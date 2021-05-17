@@ -29,7 +29,7 @@ contract Portal is ReentrancyGuard {
     uint256[] public minimumRewardRate;
 
     uint256 public stakeLimit;
-	uint256 public contractStakeLimit;
+    uint256 public contractStakeLimit;
     uint256 public distributionLimit;
 
     mapping(address => User) public users;
@@ -44,13 +44,10 @@ contract Portal is ReentrancyGuard {
         uint256[] memory _minimumRewardRate,
         address _stakingToken,
         uint256 _stakeLimit,
-		uint256 _contractStakeLimit,
-		uint256 _distributionLimit
+        uint256 _contractStakeLimit,
+        uint256 _distributionLimit
     ) {
-        require(
-            _endBlock > block.number,
-            "Portal: The end block must be in the future."
-        );
+        require(_endBlock > block.number, "Portal: The end block must be in the future.");
         require(_stakeLimit != 0, "Portal: Stake limit needs to be more than 0");
         require(_contractStakeLimit != 0, "Portal: Contract Stake limit needs to be more than 0");
 
