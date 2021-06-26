@@ -24,9 +24,12 @@ contract Portal is ReentrancyGuard {
     uint256[] public totalRewards;
     uint256[] public rewardPerTokenSnapshot;
     uint256[] public distributedReward;
-    uint256[] public totalRewardPerTokenSnapshot;
     uint256[] public totalRewardRatios;
     uint256[] public minimumRewardRate;
+
+    uint256 public userStakeLimit;
+    uint256 public contractStakeLimit;
+    uint256 public distributionLimit;
 
     mapping(address => User) public users;
     mapping(address => uint256[]) public providerRewardRatios;
@@ -38,11 +41,21 @@ contract Portal is ReentrancyGuard {
         uint256 _endBlock,
         address[] memory _rewardsToken,
         uint256[] memory _minimumRewardRate,
-        address _stakingToken
+        address _stakingToken,
+        uint256 _stakeLimit,
+        uint256 _contractStakeLimit,
+        uint256 _distributionLimit
     ) {
+        require(_endBlock > block.number, "Portal: The end block must be in the future.");
+        require(_stakeLimit != 0, "Portal: Stake limit needs to be more than 0");
+        require(_contractStakeLimit != 0, "Portal: Contract Stake limit needs to be more than 0");
+
         endBlock = _endBlock;
         stakingToken = IERC20(_stakingToken);
         minimumRewardRate = _minimumRewardRate;
+        userStakeLimit = _stakeLimit;
+        contractStakeLimit = _contractStakeLimit;
+        distributionLimit = _distributionLimit;
 
         for (uint256 i = 0; i < _rewardsToken.length; i++) {
             rewardsToken.push(IERC20(_rewardsToken[i]));
@@ -50,7 +63,6 @@ contract Portal is ReentrancyGuard {
             totalRewards.push(0);
             rewardPerTokenSnapshot.push(0);
             distributedReward.push(0);
-            totalRewardPerTokenSnapshot.push(0);
             totalRewardRatios.push(0);
         }
     }
@@ -65,6 +77,8 @@ contract Portal is ReentrancyGuard {
 
         updateReward(user);
         require(amount > 0, "Portal: cannot stake 0");
+        require(user.balance + amount <= userStakeLimit, "Portal: user stake limit exceeded");
+        require(totalStaked + amount <= contractStakeLimit, "Portal: contract stake limit exceeded");
         totalStaked = totalStaked + amount;
         user.balance = user.balance + amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
@@ -167,7 +181,7 @@ contract Portal is ReentrancyGuard {
 
     function rewardPerTokenStaked(uint256 tokenIndex) public view returns (uint256) {
         return
-            totalStaked > 0
+            totalStaked > distributionLimit
                 ? rewardPerTokenSnapshot[tokenIndex] +
                     (((lastBlockRewardIsApplicable() - lastBlockUpdate) * rewardRate[tokenIndex] * 1e18) / totalStaked)
                 : rewardPerTokenSnapshot[tokenIndex];
@@ -183,7 +197,7 @@ contract Portal is ReentrancyGuard {
     function totalEarned(uint256 tokenIndex) public view returns (uint256) {
         return
             distributedReward[tokenIndex] +
-            ((totalStaked * (rewardPerTokenStaked(tokenIndex) - totalRewardPerTokenSnapshot[tokenIndex])) / 1e18);
+            ((totalStaked * (rewardPerTokenStaked(tokenIndex) - rewardPerTokenSnapshot[tokenIndex])) / 1e18);
     }
 
     function lastBlockRewardIsApplicable() public view returns (uint256) {
@@ -200,23 +214,17 @@ contract Portal is ReentrancyGuard {
         for (uint256 i = 0; i < rewardsToken.length; i++) {
             uint256 _rewardPerTokenSnapshot = rewardPerTokenSnapshot[i];
 
-            if (totalStaked > 0) {
+            if (totalStaked > distributionLimit) {
                 _rewardPerTokenSnapshot =
                     _rewardPerTokenSnapshot +
                     (((_lastBlockRewardIsApplicable - lastBlockUpdate) * rewardRate[i] * 1e18) / totalStaked);
             }
 
-            distributedReward[i] =
-                distributedReward[i] +
-                ((totalStaked * (_rewardPerTokenSnapshot - totalRewardPerTokenSnapshot[i])) / 1e18);
+            distributedReward[i] = distributedReward[i] + ((totalStaked * (_rewardPerTokenSnapshot - rewardPerTokenSnapshot[i])) / 1e18);
+            rewardPerTokenSnapshot[i] = _rewardPerTokenSnapshot;
 
             user.rewards[i] = user.rewards[i] + ((user.balance * (_rewardPerTokenSnapshot - user.userRewardPerTokenPaid[i])) / 1e18);
-
             user.userRewardPerTokenPaid[i] = _rewardPerTokenSnapshot;
-
-            totalRewardPerTokenSnapshot[i] = _rewardPerTokenSnapshot;
-
-            rewardPerTokenSnapshot[i] = _rewardPerTokenSnapshot;
         }
 
         lastBlockUpdate = _lastBlockRewardIsApplicable;
