@@ -29,9 +29,9 @@ describe("Integration tests", function () {
 
     // Deploy ERC20 tokens
     const erc20Artifact: Artifact = await hre.artifacts.readArtifact("TestToken");
-    this.stakingToken = <ERC20>await deployContract(this.signers.admin, erc20Artifact, ["StakingToken", "ST"]);
+    this.stakingToken = <ERC20>await deployContract(this.signers.admin, erc20Artifact, ["StakingToken", "ST", 6]);
     for (let i = 0; i < config.rewardsCount; i++) {
-      this.rewards[i] = <ERC20>await deployContract(this.signers.admin, erc20Artifact, [`Token${i}`, `TT${i}`]);
+      this.rewards[i] = <ERC20>await deployContract(this.signers.admin, erc20Artifact, [`Token${i}`, `TT${i}`, 6]);
     }
 
     //Portal configuration

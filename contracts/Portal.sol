@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IMigrator.sol";
 
 contract Portal is ReentrancyGuard {
-    using SafeERC20 for IERC20;
+    using SafeERC20 for IERC20Metadata;
 
     struct User {
         uint256 balance;
@@ -34,8 +34,8 @@ contract Portal is ReentrancyGuard {
     mapping(address => User) public users;
     mapping(address => uint256[]) public providerRewardRatios;
 
-    IERC20[] public rewardsToken;
-    IERC20 public stakingToken;
+    IERC20Metadata[] public rewardsToken;
+    IERC20Metadata public stakingToken;
 
     constructor(
         uint256 _endBlock,
@@ -51,14 +51,14 @@ contract Portal is ReentrancyGuard {
         require(_contractStakeLimit != 0, "Portal: Contract Stake limit needs to be more than 0");
 
         endBlock = _endBlock;
-        stakingToken = IERC20(_stakingToken);
+        stakingToken = IERC20Metadata(_stakingToken);
         minimumRewardRate = _minimumRewardRate;
         userStakeLimit = _stakeLimit;
         contractStakeLimit = _contractStakeLimit;
         distributionLimit = _distributionLimit;
 
         for (uint256 i = 0; i < _rewardsToken.length; i++) {
-            rewardsToken.push(IERC20(_rewardsToken[i]));
+            rewardsToken.push(IERC20Metadata(_rewardsToken[i]));
             rewardRate.push(0);
             totalRewards.push(0);
             rewardPerTokenSnapshot.push(0);
@@ -70,7 +70,8 @@ contract Portal is ReentrancyGuard {
     function stake(uint256 amount) external nonReentrant {
         User storage user = users[msg.sender];
 
-        for (uint256 i = user.rewards.length; i < rewardsToken.length; i++) {
+        uint256 rewardTokensLength = rewardsToken.length;
+        for (uint256 i = user.rewards.length; i < rewardTokensLength; i++) {
             user.rewards.push(0);
             user.userRewardPerTokenPaid.push(0);
         }
@@ -97,7 +98,8 @@ contract Portal is ReentrancyGuard {
         User storage user = users[msg.sender];
         updateReward(user);
 
-        for (uint256 i = 0; i < rewardsToken.length; i++) {
+        uint256 rewardTokensLength = rewardsToken.length;
+        for (uint256 i = 0; i < rewardTokensLength; i++) {
             uint256 reward = user.rewards[i];
             if (reward > 0) {
                 user.rewards[i] = 0;
@@ -115,13 +117,15 @@ contract Portal is ReentrancyGuard {
         require(newEndBlock >= endBlock, "Portal: invalid end block");
 
         User storage user = users[msg.sender];
-        for (uint256 i = user.rewards.length; i < rewardsToken.length; i++) {
+        uint256 rewardTokensLength = rewardsToken.length;
+
+        for (uint256 i = user.rewards.length; i < rewardTokensLength; i++) {
             user.rewards.push(0);
             user.userRewardPerTokenPaid.push(0);
         }
 
         uint256[] storage providerRatios = providerRewardRatios[msg.sender];
-        for (uint256 i = providerRatios.length; i < rewardsToken.length; i++) {
+        for (uint256 i = providerRatios.length; i < rewardTokensLength; i++) {
             providerRatios.push(0);
         }
 
@@ -129,8 +133,9 @@ contract Portal is ReentrancyGuard {
 
         rewardsDuration = newEndBlock - block.number;
 
-        for (uint256 i = 0; i < rewardsToken.length; i++) {
+        for (uint256 i = 0; i < rewardTokensLength; i++) {
             uint256 remainingReward = 0;
+            uint256 tokenMultiplier = getTokenMultiplier(i);
 
             if (totalRewards[i] > 0) {
                 remainingReward = totalRewards[i] - totalEarned(i);
@@ -140,7 +145,7 @@ contract Portal is ReentrancyGuard {
             }
 
             require(minimumRewardRate[i] <= rewardRate[i], "Portal: invalid reward rate");
-            uint256 newRewardRatio = remainingReward == 0 ? 1e18 : (rewards[i] * 1e18) / remainingReward;
+            uint256 newRewardRatio = remainingReward == 0 ? tokenMultiplier : (rewards[i] * tokenMultiplier) / remainingReward;
             providerRatios[i] = providerRatios[i] + newRewardRatio;
             totalRewardRatios[i] = totalRewardRatios[i] + providerRatios[i];
             rewardsToken[i].safeTransferFrom(msg.sender, address(this), rewards[i]);
@@ -159,7 +164,8 @@ contract Portal is ReentrancyGuard {
 
         rewardsDuration = endBlock - block.number;
 
-        for (uint256 i = 0; i < rewardsToken.length; i++) {
+        uint256 rewardTokensLength = rewardsToken.length;
+        for (uint256 i = 0; i < rewardTokensLength; i++) {
             uint256 remainingReward = totalRewards[i] - totalEarned(i);
             uint256 providerPortion = (remainingReward * providerRatios[i]) / totalRewardRatios[i];
             totalRewardRatios[i] = totalRewardRatios[i] - providerRatios[i];
@@ -180,24 +186,32 @@ contract Portal is ReentrancyGuard {
     }
 
     function rewardPerTokenStaked(uint256 tokenIndex) public view returns (uint256) {
+        uint256 tokenMultiplier = getTokenMultiplier(tokenIndex);
         return
             totalStaked > distributionLimit
                 ? rewardPerTokenSnapshot[tokenIndex] +
-                    (((lastBlockRewardIsApplicable() - lastBlockUpdate) * rewardRate[tokenIndex] * 1e18) / totalStaked)
+                    (((lastBlockRewardIsApplicable() - lastBlockUpdate) * rewardRate[tokenIndex] * tokenMultiplier) / totalStaked)
                 : rewardPerTokenSnapshot[tokenIndex];
     }
 
     function earned(address account, uint256 tokenIndex) public view returns (uint256) {
         User memory user = users[account];
+        uint256 tokenMultiplier = getTokenMultiplier(tokenIndex);
         return
             user.rewards[tokenIndex] +
-            ((user.balance * (rewardPerTokenStaked(tokenIndex) - user.userRewardPerTokenPaid[tokenIndex])) / 1e18);
+            ((user.balance * (rewardPerTokenStaked(tokenIndex) - user.userRewardPerTokenPaid[tokenIndex])) / tokenMultiplier);
+    }
+
+    function getTokenMultiplier(uint256 tokenIndex) public view returns (uint256) {
+        uint256 tokenDecimals = IERC20Metadata(rewardsToken[tokenIndex]).decimals();
+        return 10**tokenDecimals;
     }
 
     function totalEarned(uint256 tokenIndex) public view returns (uint256) {
+        uint256 tokenMultiplier = getTokenMultiplier(tokenIndex);
         return
             distributedReward[tokenIndex] +
-            ((totalStaked * (rewardPerTokenStaked(tokenIndex) - rewardPerTokenSnapshot[tokenIndex])) / 1e18);
+            ((totalStaked * (rewardPerTokenStaked(tokenIndex) - rewardPerTokenSnapshot[tokenIndex])) / tokenMultiplier);
     }
 
     function lastBlockRewardIsApplicable() public view returns (uint256) {
@@ -211,19 +225,25 @@ contract Portal is ReentrancyGuard {
     function updateReward(User storage user) internal {
         uint256 _lastBlockRewardIsApplicable = lastBlockRewardIsApplicable();
 
-        for (uint256 i = 0; i < rewardsToken.length; i++) {
+        uint256 rewardTokensLength = rewardsToken.length;
+        for (uint256 i = 0; i < rewardTokensLength; i++) {
             uint256 _rewardPerTokenSnapshot = rewardPerTokenSnapshot[i];
+            uint256 _tokenMultiplier = getTokenMultiplier(i);
 
             if (totalStaked > distributionLimit) {
                 _rewardPerTokenSnapshot =
                     _rewardPerTokenSnapshot +
-                    (((_lastBlockRewardIsApplicable - lastBlockUpdate) * rewardRate[i] * 1e18) / totalStaked);
+                    (((_lastBlockRewardIsApplicable - lastBlockUpdate) * rewardRate[i] * _tokenMultiplier) / totalStaked);
             }
 
-            distributedReward[i] = distributedReward[i] + ((totalStaked * (_rewardPerTokenSnapshot - rewardPerTokenSnapshot[i])) / 1e18);
+            distributedReward[i] =
+                distributedReward[i] +
+                ((totalStaked * (_rewardPerTokenSnapshot - rewardPerTokenSnapshot[i])) / _tokenMultiplier);
             rewardPerTokenSnapshot[i] = _rewardPerTokenSnapshot;
 
-            user.rewards[i] = user.rewards[i] + ((user.balance * (_rewardPerTokenSnapshot - user.userRewardPerTokenPaid[i])) / 1e18);
+            user.rewards[i] =
+                user.rewards[i] +
+                ((user.balance * (_rewardPerTokenSnapshot - user.userRewardPerTokenPaid[i])) / _tokenMultiplier);
             user.userRewardPerTokenPaid[i] = _rewardPerTokenSnapshot;
         }
 
