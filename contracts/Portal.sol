@@ -89,6 +89,7 @@ contract Portal is ReentrancyGuard {
         User storage user = users[msg.sender];
         updateReward(user);
         require(amount > 0, "Portal: cannot withdraw 0");
+        require(amount <= user.balance, "Portal: withdraw amount exceeds available");
         totalStaked = totalStaked - amount;
         user.balance = user.balance - amount;
         stakingToken.safeTransfer(msg.sender, amount);
@@ -115,9 +116,10 @@ contract Portal is ReentrancyGuard {
 
     function addReward(uint256[] memory rewards, uint256 newEndBlock) external nonReentrant {
         require(newEndBlock >= endBlock, "Portal: invalid end block");
+        uint256 rewardTokensLength = rewardsToken.length;
+        require(rewards.length == rewardsToken.length, "Portal: rewards length mismatch");
 
         User storage user = users[msg.sender];
-        uint256 rewardTokensLength = rewardsToken.length;
 
         for (uint256 i = user.rewards.length; i < rewardTokensLength; i++) {
             user.rewards.push(0);
