@@ -4,9 +4,9 @@ pragma solidity 0.8.4;
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "./interfaces/IMigrator.sol";
+import "./interfaces/IPortal.sol";
 
-contract Portal is ReentrancyGuard {
+contract Portal is IPortal, ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
 
     struct User {
@@ -36,6 +36,10 @@ contract Portal is ReentrancyGuard {
 
     IERC20Metadata[] public rewardsToken;
     IERC20Metadata public stakingToken;
+
+    event Harvested(address recipient);
+    event Withdrawn(address recipient, uint256 amount);
+    event Staked(address staker, address recipient, uint256 amount);
 
     constructor(
         uint256 _endBlock,
@@ -67,8 +71,8 @@ contract Portal is ReentrancyGuard {
         }
     }
 
-    function stake(uint256 amount) external nonReentrant {
-        User storage user = users[msg.sender];
+    function stake(uint256 amount, address recipient) external override nonReentrant {
+        User storage user = users[recipient];
 
         uint256 rewardTokensLength = rewardsToken.length;
         for (uint256 i = user.rewards.length; i < rewardTokensLength; i++) {
@@ -83,6 +87,7 @@ contract Portal is ReentrancyGuard {
         totalStaked = totalStaked + amount;
         user.balance = user.balance + amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+        emit Staked(msg.sender, recipient, amount);
     }
 
     function withdraw(uint256 amount) public nonReentrant {
@@ -93,10 +98,11 @@ contract Portal is ReentrancyGuard {
         totalStaked = totalStaked - amount;
         user.balance = user.balance - amount;
         stakingToken.safeTransfer(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount);
     }
 
-    function harvest() public nonReentrant {
-        User storage user = users[msg.sender];
+    function harvest(address recipient) public nonReentrant {
+        User storage user = users[recipient];
         updateReward(user);
 
         uint256 rewardTokensLength = rewardsToken.length;
@@ -104,14 +110,33 @@ contract Portal is ReentrancyGuard {
             uint256 reward = user.rewards[i];
             if (reward > 0) {
                 user.rewards[i] = 0;
-                rewardsToken[i].safeTransfer(msg.sender, reward);
+                rewardsToken[i].safeTransfer(recipient, reward);
             }
         }
+
+        emit Harvested(recipient);
+    }
+
+    function harvest(uint256[] memory tokenIndices, address recipient) public nonReentrant {
+        User storage user = users[recipient];
+        updateReward(user);
+
+        uint256 numberOfTokensForHarvesting = tokenIndices.length;
+        for (uint256 i = 0; i < numberOfTokensForHarvesting; i++) {
+            uint256 rewardIndex = tokenIndices[i];
+            uint256 reward = user.rewards[rewardIndex];
+            if (reward > 0) {
+                user.rewards[rewardIndex] = 0;
+                rewardsToken[rewardIndex].safeTransfer(recipient, reward);
+            }
+        }
+
+        emit Harvested(recipient);
     }
 
     function exit() external {
         withdraw(users[msg.sender].balance);
-        harvest();
+        harvest(msg.sender);
     }
 
     function addReward(uint256[] memory rewards, uint256 newEndBlock) external nonReentrant {
@@ -184,7 +209,7 @@ contract Portal is ReentrancyGuard {
         User storage user = users[msg.sender];
         require(user.balance >= _amount, "Portal: migrate amount exceeds balance");
         stakingToken.approve(_portal, _amount);
-        IMigrator(_portal).migrate(_amount);
+        IPortal(_portal).stake(_amount, msg.sender);
     }
 
     function rewardPerTokenStaked(uint256 tokenIndex) public view returns (uint256) {

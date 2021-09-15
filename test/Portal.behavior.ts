@@ -18,7 +18,7 @@ export function shouldBehaveLikePortal(): void {
 
     log("\n=========== USER 1 ===========");
     log("Stake");
-    await this.portal.connect(this.signers.users[0]).stake(ethers.utils.parseEther("100").toString());
+    await this.portal.connect(this.signers.users[0]).stake(ethers.utils.parseEther("100").toString(), this.signers.users[0].address);
     log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
     log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
 
@@ -26,7 +26,7 @@ export function shouldBehaveLikePortal(): void {
 
     log("\n=========== USER 2 ===========");
     log("Stake");
-    await this.portal.connect(this.signers.users[1]).stake(ethers.utils.parseEther("100").toString());
+    await this.portal.connect(this.signers.users[1]).stake(ethers.utils.parseEther("100").toString(), this.signers.users[1].address);
     log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
     log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
 
@@ -45,7 +45,7 @@ export function shouldBehaveLikePortal(): void {
 
     log("\n=========== USER 3 ===========");
     log("Stake");
-    await this.portal.connect(this.signers.users[2]).stake(ethers.utils.parseEther("100").toString());
+    await this.portal.connect(this.signers.users[2]).stake(ethers.utils.parseEther("100").toString(), this.signers.users[2].address);
     log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
     log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
 
@@ -54,7 +54,8 @@ export function shouldBehaveLikePortal(): void {
     log("\n=========== USER 1 ===========");
     log("Exit");
     await this.portal.connect(this.signers.users[0]).withdraw(ethers.utils.parseEther("100").toString());
-    await this.portal.connect(this.signers.users[0]).harvest();
+
+    await this.portal.connect(this.signers.users[0]).functions["harvest(address)"](this.signers.users[0].address);
     log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
     log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
 
@@ -110,14 +111,14 @@ export function shouldBehaveLikePortal(): void {
 
     log("\n=========== USER 1 ===========");
     log("Stake");
-    await this.portal.connect(this.signers.users[0]).stake(ethers.utils.parseEther("1").toString());
+    await this.portal.connect(this.signers.users[0]).stake(ethers.utils.parseEther("1").toString(), this.signers.users[0].address);
     log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
     log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
 
     await mineBlocks(hre.ethers.provider, 49);
 
     log("Exit");
-    await this.portal.connect(this.signers.users[0]).harvest();
+    await this.portal.connect(this.signers.users[0]).functions["harvest(address)"](this.signers.users[0].address);
     log("TotalRewards: ", (await this.portal.totalRewards(0)).toString());
     log("TotalEarned: ", (await this.portal.totalEarned(0)).toString());
 
