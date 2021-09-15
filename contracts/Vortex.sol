@@ -8,7 +8,7 @@ import "./Portal.sol";
 
 contract Vortex {
     address[] public portals;
-    event PortalCreated(address creator);
+    event PortalCreated(address indexed creator);
 
     function createPortal(
         uint256 _endBlock,
