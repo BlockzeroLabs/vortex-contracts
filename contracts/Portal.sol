@@ -34,7 +34,7 @@ contract Portal is IPortal, ReentrancyGuard {
     mapping(address => User) public users;
     mapping(address => uint256[]) public providerRewardRatios;
 
-    IERC20Metadata[] public rewardsToken;
+    IERC20Metadata[] internal rewardsToken;
     IERC20Metadata public stakingToken;
 
     event Harvested(address recipient);
@@ -275,5 +275,26 @@ contract Portal is IPortal, ReentrancyGuard {
         }
 
         lastBlockUpdate = _lastBlockRewardIsApplicable;
+    }
+
+    function getRewardTokens() public view returns (IERC20Metadata[] memory) {
+        return rewardsToken;
+    }
+
+    function getProviderRewardsRatio(address provider) public view returns (uint256[] memory) {
+        return providerRewardRatios[provider];
+    }
+
+    function getUserData(address user)
+        public
+        view
+        returns (
+            uint256,
+            uint256[] memory,
+            uint256[] memory
+        )
+    {
+        User memory u = users[user];
+        return (u.balance, u.userRewardPerTokenPaid, u.rewards);
     }
 }
