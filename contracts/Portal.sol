@@ -37,9 +37,9 @@ contract Portal is IPortal, ReentrancyGuard {
     IERC20Metadata[] internal rewardsToken;
     IERC20Metadata public stakingToken;
 
-    event Harvested(address recipient);
-    event Withdrawn(address recipient, uint256 amount);
-    event Staked(address staker, address recipient, uint256 amount);
+    event Harvested(address recipient, address portal);
+    event Withdrawn(address recipient, uint256 amount, address portal);
+    event Staked(address staker, address recipient, uint256 amount, address portal);
 
     constructor(
         uint256 _endBlock,
@@ -87,7 +87,7 @@ contract Portal is IPortal, ReentrancyGuard {
         totalStaked = totalStaked + amount;
         user.balance = user.balance + amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-        emit Staked(msg.sender, recipient, amount);
+        emit Staked(msg.sender, recipient, amount, address(this));
     }
 
     function withdraw(uint256 amount) public nonReentrant {
@@ -98,7 +98,7 @@ contract Portal is IPortal, ReentrancyGuard {
         totalStaked = totalStaked - amount;
         user.balance = user.balance - amount;
         stakingToken.safeTransfer(msg.sender, amount);
-        emit Withdrawn(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount, address(this));
     }
 
     function harvest(address recipient) public nonReentrant {
@@ -114,7 +114,7 @@ contract Portal is IPortal, ReentrancyGuard {
             }
         }
 
-        emit Harvested(recipient);
+        emit Harvested(recipient, address(this));
     }
 
     function harvest(uint256[] memory tokenIndices, address recipient) public nonReentrant {
@@ -131,7 +131,7 @@ contract Portal is IPortal, ReentrancyGuard {
             }
         }
 
-        emit Harvested(recipient);
+        emit Harvested(recipient, address(this));
     }
 
     function exit() external {
@@ -297,4 +297,13 @@ contract Portal is IPortal, ReentrancyGuard {
         User memory u = users[user];
         return (u.balance, u.userRewardPerTokenPaid, u.rewards);
     }
+
+    function getStakingToken() public view returns (IERC20Metadata) {
+        return stakingToken;
+    }
+
+    function endDate() public view returns (uint256) {
+        return endBlock;
+    }
+    
 }

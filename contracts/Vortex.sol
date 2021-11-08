@@ -8,7 +8,7 @@ import "./Portal.sol";
 
 contract Vortex {
     address[] public portals;
-    event PortalCreated(address indexed creator);
+    event PortalCreated(address indexed creator, address portal);
 
     function createPortal(
         uint256 _endBlock,
@@ -23,7 +23,7 @@ contract Vortex {
             new Portal(_endBlock, _rewardsToken, _minimumRewardRate, _stakingToken, _stakeLimit, _contractStakeLimit, _distributionLimit);
 
         portals.push(address(portal));
-        emit PortalCreated(msg.sender);
+        emit PortalCreated(msg.sender,address(portal));
     }
 
     function allPortalsLength() external view returns (uint256) {
