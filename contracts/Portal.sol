@@ -40,6 +40,8 @@ contract Portal is IPortal, ReentrancyGuard {
     event Harvested(address recipient, address portal);
     event Withdrawn(address recipient, uint256 amount, address portal);
     event Staked(address staker, address recipient, uint256 amount, address portal);
+    event Deposited(uint256[] amount, uint256 endDate, address recipient, address portal);
+    event UnStaked(address portal);
 
     constructor(
         uint256 _endBlock,
@@ -137,6 +139,7 @@ contract Portal is IPortal, ReentrancyGuard {
     function exit() external {
         withdraw(users[msg.sender].balance);
         harvest(msg.sender);
+        emit UnStaked(address(this));
     }
 
     function addReward(uint256[] memory rewards, uint256 newEndBlock) external nonReentrant {
@@ -181,6 +184,7 @@ contract Portal is IPortal, ReentrancyGuard {
 
         lastBlockUpdate = block.number;
         endBlock = newEndBlock;
+        emit Deposited(rewards, newEndBlock, msg.sender, address(this));
     }
 
     function removeReward() external nonReentrant {
@@ -306,4 +310,15 @@ contract Portal is IPortal, ReentrancyGuard {
         return endBlock;
     }
     
+    function getTotalStaked() public view returns (uint256) {
+        return totalStaked;
+    }
+
+    function getRewardRate() public view returns (uint256[] memory) {
+        return rewardRate;
+    }
+
+    function totalReward() public view returns (uint256[] memory) {
+        return totalRewards;
+    }
 }
