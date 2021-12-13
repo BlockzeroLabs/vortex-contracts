@@ -37,9 +37,11 @@ contract Portal is IPortal, ReentrancyGuard {
     IERC20Metadata[] internal rewardsToken;
     IERC20Metadata public stakingToken;
 
-    event Harvested(address recipient);
-    event Withdrawn(address recipient, uint256 amount);
-    event Staked(address staker, address recipient, uint256 amount);
+    event Harvested(address recipient, address portal);
+    event Withdrawn(address recipient, uint256 amount, address portal);
+    event Staked(address staker, address recipient, uint256 amount, address portal);
+    event Deposited(uint256[] amount, uint256 endDate, address recipient, address portal);
+    event UnStaked(address portal);
 
     constructor(
         uint256 _endBlock,
@@ -87,7 +89,7 @@ contract Portal is IPortal, ReentrancyGuard {
         totalStaked = totalStaked + amount;
         user.balance = user.balance + amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-        emit Staked(msg.sender, recipient, amount);
+        emit Staked(msg.sender, recipient, amount, address(this));
     }
 
     function withdraw(uint256 amount) public nonReentrant {
@@ -98,7 +100,7 @@ contract Portal is IPortal, ReentrancyGuard {
         totalStaked = totalStaked - amount;
         user.balance = user.balance - amount;
         stakingToken.safeTransfer(msg.sender, amount);
-        emit Withdrawn(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount, address(this));
     }
 
     function harvest(address recipient) public nonReentrant {
@@ -114,7 +116,7 @@ contract Portal is IPortal, ReentrancyGuard {
             }
         }
 
-        emit Harvested(recipient);
+        emit Harvested(recipient, address(this));
     }
 
     function harvest(uint256[] memory tokenIndices, address recipient) public nonReentrant {
@@ -131,12 +133,13 @@ contract Portal is IPortal, ReentrancyGuard {
             }
         }
 
-        emit Harvested(recipient);
+        emit Harvested(recipient, address(this));
     }
 
     function exit() external {
         withdraw(users[msg.sender].balance);
         harvest(msg.sender);
+        emit UnStaked(address(this));
     }
 
     function addReward(uint256[] memory rewards, uint256 newEndBlock) external nonReentrant {
@@ -181,6 +184,7 @@ contract Portal is IPortal, ReentrancyGuard {
 
         lastBlockUpdate = block.number;
         endBlock = newEndBlock;
+        emit Deposited(rewards, newEndBlock, msg.sender, address(this));
     }
 
     function removeReward() external nonReentrant {
@@ -296,5 +300,25 @@ contract Portal is IPortal, ReentrancyGuard {
     {
         User memory u = users[user];
         return (u.balance, u.userRewardPerTokenPaid, u.rewards);
+    }
+
+    function getStakingToken() public view returns (IERC20Metadata) {
+        return stakingToken;
+    }
+
+    function endDate() public view returns (uint256) {
+        return endBlock;
+    }
+    
+    function getTotalStaked() public view returns (uint256) {
+        return totalStaked;
+    }
+
+    function getRewardRate() public view returns (uint256[] memory) {
+        return rewardRate;
+    }
+
+    function totalReward() public view returns (uint256[] memory) {
+        return totalRewards;
     }
 }
