@@ -211,7 +211,11 @@ contract Portal is IPortal, ReentrancyGuard {
 
     function migrate(uint256 _amount, address _portal) external nonReentrant {
         User storage user = users[msg.sender];
-        require(user.balance >= _amount, "Portal: migrate amount exceeds balance");
+        updateReward(user);
+        require(_amount > 0, "Portal: cannot migrate 0");
+        require(_amount <= user.balance, "Portal: migrate amount exceeds available");
+        totalStaked = totalStaked - _amount;
+        user.balance = user.balance - _amount;
         stakingToken.approve(_portal, _amount);
         IPortal(_portal).stake(_amount, msg.sender);
     }
@@ -309,7 +313,7 @@ contract Portal is IPortal, ReentrancyGuard {
     function endDate() public view returns (uint256) {
         return endBlock;
     }
-    
+
     function getTotalStaked() public view returns (uint256) {
         return totalStaked;
     }
