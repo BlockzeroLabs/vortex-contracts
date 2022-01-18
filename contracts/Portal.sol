@@ -54,7 +54,7 @@ contract Portal is IPortal, ReentrancyGuard, Ownable {
         require(_endBlock > block.number, "Portal: The end block must be in the future.");
         require(_stakeLimit != 0, "Portal: Stake limit needs to be more than 0");
         require(_contractStakeLimit != 0, "Portal: Contract Stake limit needs to be more than 0");
-        require(_rewardsToken.length <= 10, "Portal: number of reward tokens cannot exceed 10");
+        require(_rewardsToken.length <= 20, "Portal: number of reward tokens cannot exceed 20");
         endBlock = _endBlock;
         stakingToken = IERC20Metadata(_stakingToken);
         minimumRewardRate = _minimumRewardRate;
