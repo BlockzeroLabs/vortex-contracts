@@ -101,7 +101,7 @@ contract Portal is IPortal, ReentrancyGuard, Ownable {
 
         // Initialize user if it doesn't exists
         // This can only happen if the portal owner never added a reward
-        for (uint256 i = user.rewards.length; i < rewardTokensLength; i++) {
+        for (uint256 i = user.rewards.length; i < rewardsToken.length; i++) {
             user.rewards.push(0);
             user.userRewardPerTokenPaid.push(0);
         }
