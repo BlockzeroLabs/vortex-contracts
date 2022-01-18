@@ -2,11 +2,12 @@
 pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IPortal.sol";
 
-contract Portal is IPortal, ReentrancyGuard {
+contract Portal is IPortal, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20Metadata;
 
     struct User {
@@ -24,24 +25,21 @@ contract Portal is IPortal, ReentrancyGuard {
     uint256[] public totalRewards;
     uint256[] public rewardPerTokenSnapshot;
     uint256[] public distributedReward;
-    uint256[] public totalRewardRatios;
     uint256[] public minimumRewardRate;
 
     uint256 public userStakeLimit;
     uint256 public contractStakeLimit;
     uint256 public distributionLimit;
 
-    mapping(address => User) public users;
-    mapping(address => uint256[]) public providerRewardRatios;
-
-    IERC20Metadata[] internal rewardsToken;
+    IERC20Metadata[] public rewardsToken;
     IERC20Metadata public stakingToken;
 
-    event Harvested(address recipient, address portal);
-    event Withdrawn(address recipient, uint256 amount, address portal);
-    event Staked(address staker, address recipient, uint256 amount, address portal);
-    event Deposited(uint256[] amount, uint256 endDate, address recipient, address portal);
-    event UnStaked(address portal);
+    mapping(address => User) public users;
+
+    event Harvested(address recipient);
+    event Withdrawn(address recipient, uint256 amount);
+    event Staked(address staker, address recipient, uint256 amount);
+    event Deposited(uint256[] amount, uint256 endDate, address recipient);
 
     constructor(
         uint256 _endBlock,
@@ -50,12 +48,13 @@ contract Portal is IPortal, ReentrancyGuard {
         address _stakingToken,
         uint256 _stakeLimit,
         uint256 _contractStakeLimit,
-        uint256 _distributionLimit
+        uint256 _distributionLimit,
+        address _portalOwner
     ) {
         require(_endBlock > block.number, "Portal: The end block must be in the future.");
         require(_stakeLimit != 0, "Portal: Stake limit needs to be more than 0");
         require(_contractStakeLimit != 0, "Portal: Contract Stake limit needs to be more than 0");
-
+        require(_rewardsToken.length <= 10, "Portal: number of reward tokens cannot exceed 10");
         endBlock = _endBlock;
         stakingToken = IERC20Metadata(_stakingToken);
         minimumRewardRate = _minimumRewardRate;
@@ -69,8 +68,60 @@ contract Portal is IPortal, ReentrancyGuard {
             totalRewards.push(0);
             rewardPerTokenSnapshot.push(0);
             distributedReward.push(0);
-            totalRewardRatios.push(0);
         }
+
+        transferOwnership(_portalOwner);
+    }
+
+    function addRewardTokens(address[] memory _rewardsToken, uint256[] memory _minimumRewardRate) external onlyOwner {
+        require(rewardsToken.length + _rewardsToken.length <= 20, "Portal: number of reward tokens cannot exceed 20");
+
+        for (uint256 i = 0; i < _rewardsToken.length; i++) {
+            rewardsToken.push(IERC20Metadata(_rewardsToken[i]));
+            minimumRewardRate.push(_minimumRewardRate[i]);
+            rewardRate.push(0);
+            totalRewards.push(0);
+            rewardPerTokenSnapshot.push(0);
+            distributedReward.push(0);
+        }
+    }
+
+    function updateMinimumRewardRate(uint256[] memory tokenIndices, uint256[] memory _minimumRewardRate) external onlyOwner {
+        for (uint256 i = 0; i < tokenIndices.length; i++) {
+            minimumRewardRate[tokenIndices[i]] = _minimumRewardRate[i];
+        }
+    }
+
+    function withdrawReward(
+        uint256[] memory tokenIndices,
+        uint256[] memory amounts,
+        address recipient
+    ) external onlyOwner {
+        User storage user = users[msg.sender];
+
+        // Initialize user if it doesn't exists
+        // This can only happen if the portal owner never added a reward
+        for (uint256 i = user.rewards.length; i < rewardTokensLength; i++) {
+            user.rewards.push(0);
+            user.userRewardPerTokenPaid.push(0);
+        }
+
+        updateReward(user);
+
+        rewardsDuration = endBlock - block.number;
+        for (uint256 i = 0; i < tokenIndices.length; i++) {
+            uint256 rewardIndex = tokenIndices[i];
+            uint256 withdrawAmount = amounts[i];
+
+            // calculate the amount that is not earned yet and send it to the recipient
+            uint256 remainingReward = totalRewards[rewardIndex] - totalEarned(rewardIndex);
+            require(remainingReward >= withdrawAmount, "Portal: withdraw amount exceeds available");
+            totalRewards[rewardIndex] = totalRewards[rewardIndex] - withdrawAmount;
+            rewardRate[i] = (remainingReward - withdrawAmount) / rewardsDuration;
+            rewardsToken[i].safeTransfer(recipient, withdrawAmount);
+        }
+
+        lastBlockUpdate = block.number;
     }
 
     function stake(uint256 amount, address recipient) external override nonReentrant {
@@ -89,7 +140,7 @@ contract Portal is IPortal, ReentrancyGuard {
         totalStaked = totalStaked + amount;
         user.balance = user.balance + amount;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-        emit Staked(msg.sender, recipient, amount, address(this));
+        emit Staked(msg.sender, recipient, amount);
     }
 
     function withdraw(uint256 amount) public nonReentrant {
@@ -100,7 +151,7 @@ contract Portal is IPortal, ReentrancyGuard {
         totalStaked = totalStaked - amount;
         user.balance = user.balance - amount;
         stakingToken.safeTransfer(msg.sender, amount);
-        emit Withdrawn(msg.sender, amount, address(this));
+        emit Withdrawn(msg.sender, amount);
     }
 
     function harvest(address recipient) public nonReentrant {
@@ -116,7 +167,7 @@ contract Portal is IPortal, ReentrancyGuard {
             }
         }
 
-        emit Harvested(recipient, address(this));
+        emit Harvested(recipient);
     }
 
     function harvest(uint256[] memory tokenIndices, address recipient) public nonReentrant {
@@ -133,40 +184,33 @@ contract Portal is IPortal, ReentrancyGuard {
             }
         }
 
-        emit Harvested(recipient, address(this));
+        emit Harvested(recipient);
     }
 
     function exit() external {
         withdraw(users[msg.sender].balance);
         harvest(msg.sender);
-        emit UnStaked(address(this));
     }
 
     function addReward(uint256[] memory rewards, uint256 newEndBlock) external nonReentrant {
         require(newEndBlock >= endBlock, "Portal: invalid end block");
         uint256 rewardTokensLength = rewardsToken.length;
         require(rewards.length == rewardsToken.length, "Portal: rewards length mismatch");
-
         User storage user = users[msg.sender];
 
+        // Initialize user if it doesn't exists
         for (uint256 i = user.rewards.length; i < rewardTokensLength; i++) {
             user.rewards.push(0);
             user.userRewardPerTokenPaid.push(0);
         }
 
-        uint256[] storage providerRatios = providerRewardRatios[msg.sender];
-        for (uint256 i = providerRatios.length; i < rewardTokensLength; i++) {
-            providerRatios.push(0);
-        }
-
         updateReward(user);
 
+        // remaining reward duration
         rewardsDuration = newEndBlock - block.number;
 
         for (uint256 i = 0; i < rewardTokensLength; i++) {
             uint256 remainingReward = 0;
-            uint256 tokenMultiplier = getTokenMultiplier(i);
-
             if (totalRewards[i] > 0) {
                 remainingReward = totalRewards[i] - totalEarned(i);
                 rewardRate[i] = (rewards[i] + remainingReward) / rewardsDuration;
@@ -175,38 +219,15 @@ contract Portal is IPortal, ReentrancyGuard {
             }
 
             require(minimumRewardRate[i] <= rewardRate[i], "Portal: invalid reward rate");
-            uint256 newRewardRatio = remainingReward == 0 ? tokenMultiplier : (rewards[i] * tokenMultiplier) / remainingReward;
-            providerRatios[i] = providerRatios[i] + newRewardRatio;
-            totalRewardRatios[i] = totalRewardRatios[i] + providerRatios[i];
-            rewardsToken[i].safeTransferFrom(msg.sender, address(this), rewards[i]);
+            if (rewards[i] > 0) {
+                rewardsToken[i].safeTransferFrom(msg.sender, address(this), rewards[i]);
+            }
             totalRewards[i] = totalRewards[i] + rewards[i];
         }
 
         lastBlockUpdate = block.number;
         endBlock = newEndBlock;
-        emit Deposited(rewards, newEndBlock, msg.sender, address(this));
-    }
-
-    function removeReward() external nonReentrant {
-        User storage user = users[msg.sender];
-        uint256[] storage providerRatios = providerRewardRatios[msg.sender];
-
-        updateReward(user);
-
-        rewardsDuration = endBlock - block.number;
-
-        uint256 rewardTokensLength = rewardsToken.length;
-        for (uint256 i = 0; i < rewardTokensLength; i++) {
-            uint256 remainingReward = totalRewards[i] - totalEarned(i);
-            uint256 providerPortion = (remainingReward * providerRatios[i]) / totalRewardRatios[i];
-            totalRewardRatios[i] = totalRewardRatios[i] - providerRatios[i];
-            providerRatios[i] = 0;
-            totalRewards[i] = totalRewards[i] - providerPortion;
-            rewardRate[i] = (remainingReward - providerPortion) / rewardsDuration;
-            rewardsToken[i].safeTransfer(msg.sender, providerPortion);
-        }
-
-        lastBlockUpdate = block.number;
+        emit Deposited(rewards, newEndBlock, msg.sender);
     }
 
     function migrate(uint256 _amount, address _portal) external nonReentrant {
@@ -285,14 +306,6 @@ contract Portal is IPortal, ReentrancyGuard {
         lastBlockUpdate = _lastBlockRewardIsApplicable;
     }
 
-    function getRewardTokens() public view returns (IERC20Metadata[] memory) {
-        return rewardsToken;
-    }
-
-    function getProviderRewardsRatio(address provider) public view returns (uint256[] memory) {
-        return providerRewardRatios[provider];
-    }
-
     function getUserData(address user)
         public
         view
@@ -306,6 +319,18 @@ contract Portal is IPortal, ReentrancyGuard {
         return (u.balance, u.userRewardPerTokenPaid, u.rewards);
     }
 
+    function getRewardTokens() public view returns (IERC20Metadata[] memory) {
+        return rewardsToken;
+    }
+
+    function getRewardRate() public view returns (uint256[] memory) {
+        return rewardRate;
+    }
+
+    function totalReward() public view returns (uint256[] memory) {
+        return totalRewards;
+    }
+
     function getStakingToken() public view returns (IERC20Metadata) {
         return stakingToken;
     }
@@ -316,13 +341,5 @@ contract Portal is IPortal, ReentrancyGuard {
 
     function getTotalStaked() public view returns (uint256) {
         return totalStaked;
-    }
-
-    function getRewardRate() public view returns (uint256[] memory) {
-        return rewardRate;
-    }
-
-    function totalReward() public view returns (uint256[] memory) {
-        return totalRewards;
     }
 }
